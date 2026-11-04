@@ -1,20 +1,19 @@
 --!nonstrict
 --[[
-	Kbar 1.01 — a client-side notch bar for Roblox.
+	Kbar 1.02 — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.0        tag and version come from Ver.txt
-		the tray: FPS Display, LSSR SW, Free Camera,
-		          Ping Display, Load Inf Yield, KHub,
-		          Anim Changer, Click 2 MEOW!, K
+		Indev | 12:00 | 1.02       tag and version come from Ver.txt
+		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
+		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, at the bottom of whatever is showing
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
-	Top right: the health bar and its red cross, always on, and the person orb,
-	which opens and closes Roblox's own player list.
-	K opens the menu: SHOP (server hop), Exit, Notify.
+	Top right: the person orb (Roblox's own player list), the health bar and its
+	red cross, and the K button, which opens the menu below it.
+	The menu: SHOP (server hop), Exit, Notify.
 
 	_g.Kbar.notify(title, body) shows a notification, _g.Kbar.destroy() unloads.
 ]]
@@ -30,34 +29,36 @@ local CONFIG = {
 	notchWidthClosed = 232,
 	notchRadius = 14,
 	infoRowHeight = 32,
-	trayHeight = 126,
+	trayHeight = 94,
 	chevronHeight = 16,
 
-	cellWidth = 118,
+	cellWidth = 76,
 	cellHeight = 38,
 	cellPadding = 6,
 
-	sideBoxWidth = 78,
+	sideBoxWidth = 92,
 	sideBoxGap = 8,
 
 	barWidth = 152,
 	barHeight = 12,
 	crossSize = 15,
 	orbSize = 34,
+	keySize = 34,
 	orbMargin = 16,
 	orbTop = 7,
+	hideDefaultHealth = true,
 
 	menuWidth = 250,
 	menuRowHeight = 46,
 
 	font = Enum.Font.Code,
 	textSize = 14,
-	smallTextSize = 11,
+	smallTextSize = 10,
 	buttonTextSize = 12,
 	strokeThickness = 2,
 
-	meowSound = "rbxassetid://12221976", -- KHub's own click sound
-	notifySound = "rbxassetid://12221976",
+	meowSound = "rbxassetid://134881862056957", -- KHub's startup sound
+	clickSound = "rbxassetid://12221976", -- KHub's click sound
 
 	scripts = {
 		lssr = "https://raw.githubusercontent.com/Kttyz/Scripts/main/LSSR%20Staff%20Watch.lua",
@@ -84,6 +85,7 @@ local CONFIG = {
 }
 
 -- id, label, and what the button says on its two lines
+-- eight of them, four across, two rows
 local TRAY = {
 	{ id = "fps", label = "FPS\nDisplay" },
 	{ id = "lssr", label = "LSSR\nSW" },
@@ -93,7 +95,6 @@ local TRAY = {
 	{ id = "khub", label = "KHub" },
 	{ id = "anim", label = "Anim\nChanger" },
 	{ id = "meow", label = "Click 2\nMEOW!" },
-	{ id = "menu", label = "K\nMenu" },
 }
 
 local Players = game:GetService("Players")
@@ -104,6 +105,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 if not player then
@@ -237,11 +239,16 @@ local notifyGui = make("ScreenGui", {
 	DisplayOrder = 700,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 })
+pcall(function()
+	notifyGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+end)
 notifyGui.Parent = playerGui
 local notifySlot = 0
 
-local function notify(titleText, bodyText, length)
-	playSound(CONFIG.notifySound, 0.5)
+local function notify(titleText, bodyText, length, muted)
+	if not muted then
+		playSound(CONFIG.clickSound, 0.5)
+	end
 	notifySlot += 1
 	local slot = notifySlot
 
@@ -257,16 +264,6 @@ local function notify(titleText, bodyText, length)
 	corner(toast, 6)
 	stroke(toast, CONFIG.colour.edge, 1, 0.55)
 
-	label(toast, {
-		Name = "Title",
-		Text = titleText or "Kbar",
-		BackgroundTransparency = 1,
-		BackgroundColor3 = CONFIG.colour.panelTop,
-		Size = UDim2.new(1, 0, 0, 23),
-		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		ZIndex = 3,
-	})
 	local titlePlate = make("Frame", {
 		Name = "TitlePlate",
 		Size = UDim2.new(1, 0, 0, 23),
@@ -275,7 +272,15 @@ local function notify(titleText, bodyText, length)
 		ZIndex = 2,
 	}, toast)
 	corner(titlePlate, 6)
-	toast.Title.ZIndex = 3
+
+	label(toast, {
+		Name = "Title",
+		Text = titleText or "Kbar",
+		Size = UDim2.new(1, 0, 0, 23),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 3,
+	})
 
 	label(toast, {
 		Name = "Body",
@@ -321,7 +326,7 @@ local gui = make("ScreenGui", {
 
 -- the notch is meant to meet the top edge of the screen, so this gui measures from the
 -- real edge instead of from under Roblox's top bar. The notch is centred, where Roblox
--- draws nothing of its own.
+-- draws nothing of its own. The health bar and orb are insetted by hand below.
 pcall(function()
 	gui.ScreenInsets = Enum.ScreenInsets.None
 end)
@@ -443,7 +448,7 @@ local verLabel = label(cells, {
 })
 make("UISizeConstraint", { MaxSize = Vector2.new(88, 14) }, verLabel)
 
--- the tray
+-- the tray, four across
 local tray = make("Frame", {
 	Name = "Tray",
 	BackgroundTransparency = 1,
@@ -455,7 +460,7 @@ local tray = make("Frame", {
 make("UIGridLayout", {
 	CellSize = UDim2.fromOffset(CONFIG.cellWidth, CONFIG.cellHeight),
 	CellPadding = UDim2.fromOffset(CONFIG.cellPadding, CONFIG.cellPadding),
-	FillDirectionMaxCells = 3,
+	FillDirectionMaxCells = 4,
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -475,8 +480,6 @@ local function press(buttonId)
 	end
 	return false
 end
-
-local buttons = {}
 
 for index, entry in ipairs(TRAY) do
 	local button = make("TextButton", {
@@ -521,8 +524,6 @@ for index, entry in ipairs(TRAY) do
 		end)
 		press(entry.id)
 	end))
-
-	table.insert(buttons, button)
 end
 
 -- the chevron lives inside the notch, at its bottom edge, and rides down with the tray
@@ -576,16 +577,10 @@ arrowLeg(0.28, 38)
 arrowLeg(0.72, -38)
 
 local trayOpen = CONFIG.startOpen
-local menuRef = nil
 
 local function setOpen(open)
 	trayOpen = open
 	tray.Visible = true
-	if menuRef then
-		tween(menuRef, motionInfo(0.2), {
-			Position = UDim2.new(0.5, 0, 0, CONFIG.notchRadius + (open and openHeight or closedHeight) + 8),
-		})
-	end
 	tween(cluster, motionInfo(0.2), {
 		Size = UDim2.fromOffset(
 			open and CONFIG.notchWidth or CONFIG.notchWidthClosed,
@@ -626,14 +621,21 @@ end))
 -- the fps and ping readouts, flanking the notch
 ----------------------------------------------------------------------
 
+local SIDE_BOX_HEIGHT = CONFIG.infoRowHeight + CONFIG.notchRadius
+local SIDE_TITLE_TOP = CONFIG.notchRadius + 2
+local SIDE_TITLE_HEIGHT = 10
+local SIDE_VALUE_TOP = SIDE_TITLE_TOP + SIDE_TITLE_HEIGHT + 1
+local SIDE_VALUE_HEIGHT = SIDE_BOX_HEIGHT - SIDE_VALUE_TOP - 1
+
 local function sideBox(name, title, side)
 	local frame = panelled(make("Frame", {
 		Name = name,
 		AnchorPoint = Vector2.new(side == "left" and 1 or 0, 0),
 		Position = side == "left" and UDim2.new(0, -CONFIG.sideBoxGap, 0, -CONFIG.notchRadius)
 			or UDim2.new(1, CONFIG.sideBoxGap, 0, -CONFIG.notchRadius),
-		Size = UDim2.fromOffset(CONFIG.sideBoxWidth, CONFIG.infoRowHeight + CONFIG.notchRadius),
+		Size = UDim2.fromOffset(CONFIG.sideBoxWidth, SIDE_BOX_HEIGHT),
 		BackgroundColor3 = CONFIG.colour.background,
+		ClipsDescendants = false,
 		Visible = false,
 		ZIndex = 3,
 	}), 0)
@@ -647,17 +649,18 @@ local function sideBox(name, title, side)
 		TextColor3 = CONFIG.colour.dimmer,
 		TextSize = CONFIG.smallTextSize,
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 6),
-		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.new(0.5, 0, 0, SIDE_TITLE_TOP),
+		Size = UDim2.new(1, -8, 0, SIDE_TITLE_HEIGHT),
 		ZIndex = 4,
 	})
 
 	local value = label(frame, {
 		Name = "Value",
 		Text = "0",
+		TextSize = CONFIG.textSize,
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 19),
-		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.new(0.5, 0, 0, SIDE_VALUE_TOP),
+		Size = UDim2.new(1, -8, 0, SIDE_VALUE_HEIGHT),
 		ZIndex = 4,
 	})
 
@@ -668,22 +671,30 @@ local fpsBox, fpsValue = sideBox("Fps", "FPS", "left")
 local pingBox, pingValue = sideBox("Ping", "Ping", "right")
 
 ----------------------------------------------------------------------
--- health bar, its red cross, and the person orb
+-- health bar, its red cross, the person orb and the K button
 ----------------------------------------------------------------------
 
 local orbY = CONFIG.orbTop
 local orbCentre = orbY + CONFIG.orbSize / 2
 
+-- everything on the right is measured off the right edge, right to left:
+-- orb, gap, health bar, gap, red cross, gap, K button
+local orbRight = CONFIG.orbMargin
+local barRight = orbRight + CONFIG.orbSize + 10
+local barLeft = barRight + CONFIG.barWidth
+local crossRight = barLeft + 8
+local crossLeft = crossRight + CONFIG.crossSize
+local keyRight = crossLeft + 10
+
 local healthBar = panelled(make("Frame", {
 	Name = "Health",
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -(CONFIG.orbMargin + CONFIG.orbSize + 10), 0, orbCentre),
+	Position = UDim2.new(1, -barRight, 0, orbCentre),
 	Size = UDim2.fromOffset(CONFIG.barWidth, CONFIG.barHeight),
 	BackgroundColor3 = Color3.fromRGB(28, 30, 33),
 	ClipsDescendants = true,
 	ZIndex = 3,
 }), 0)
-corner(healthBar, CONFIG.barHeight / 2)
 stroke(healthBar, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
 healthBar.Parent = gui
 
@@ -694,13 +705,12 @@ local healthFill = make("Frame", {
 	BorderSizePixel = 0,
 	ZIndex = 4,
 }, healthBar)
-corner(healthFill, CONFIG.barHeight / 2)
 
 -- the red cross sits just left of the bar
 local cross = make("Frame", {
 	Name = "Cross",
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -(CONFIG.orbMargin + CONFIG.orbSize + 10 + CONFIG.barWidth + 8), 0, orbCentre),
+	Position = UDim2.new(1, -crossRight, 0, orbCentre),
 	Size = UDim2.fromOffset(CONFIG.crossSize, CONFIG.crossSize),
 	BackgroundTransparency = 1,
 	ZIndex = 3,
@@ -728,7 +738,7 @@ make("Frame", {
 local orb = make("TextButton", {
 	Name = "People",
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -CONFIG.orbMargin, 0, orbY),
+	Position = UDim2.new(1, -orbRight, 0, orbY),
 	Size = UDim2.fromOffset(CONFIG.orbSize, CONFIG.orbSize),
 	Text = "",
 	AutoButtonColor = false,
@@ -769,8 +779,32 @@ local shoulders = make("Frame", {
 }, glyph)
 corner(shoulders, 4)
 
+-- the K button, its own thing, beside the health bar
+local keyButton = make("TextButton", {
+	Name = "MenuKey",
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -keyRight, 0, orbCentre),
+	Size = UDim2.fromOffset(CONFIG.keySize, CONFIG.keySize),
+	Text = "K",
+	Font = CONFIG.font,
+	TextSize = CONFIG.textSize + 2,
+	TextColor3 = CONFIG.colour.text,
+	AutoButtonColor = false,
+	BackgroundColor3 = CONFIG.colour.background,
+	ZIndex = 3,
+}, gui)
+corner(keyButton, 8)
+local keyStroke = stroke(keyButton, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
+
 -- health follows the local character, and rebinds on respawn
 local healthConnection = nil
+
+-- Roblox's own health bar, off: this gui draws one instead
+local function hideCoreHealth()
+	pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+	end)
+end
 
 local function bindHealth(character)
 	if healthConnection then
@@ -785,6 +819,11 @@ local function bindHealth(character)
 	if not humanoid then
 		return
 	end
+	if CONFIG.hideDefaultHealth then
+		pcall(function()
+			humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		end)
+	end
 	local function update()
 		if not humanoid.Parent then
 			return
@@ -798,23 +837,23 @@ local function bindHealth(character)
 	track(humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(update))
 end
 
+hideCoreHealth()
 bindHealth(player.Character)
 track(player.CharacterAdded:Connect(function(character)
 	bindHealth(character)
+	task.delay(1, hideCoreHealth)
 end))
 
 ----------------------------------------------------------------------
 -- the K menu
 ----------------------------------------------------------------------
 
-local function menuTopFor(open)
-	return CONFIG.notchRadius + (open and openHeight or closedHeight) + 8
-end
+local menuTop = orbY + CONFIG.keySize + 8
 
 local menu = panelled(make("Frame", {
 	Name = "Menu",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, menuTopFor(CONFIG.startOpen)),
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -keyRight, 0, menuTop),
 	Size = UDim2.fromOffset(CONFIG.menuWidth, CONFIG.menuRowHeight * 3 + 22),
 	BackgroundColor3 = CONFIG.colour.background,
 	Visible = false,
@@ -823,7 +862,6 @@ local menu = panelled(make("Frame", {
 corner(menu, CONFIG.notchRadius)
 stroke(menu, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
 menu.Parent = gui
-menuRef = menu
 
 make("UIPadding", {
 	PaddingTop = UDim.new(0, 6),
@@ -906,6 +944,10 @@ end
 local function setMenuOpen(open)
 	menuOpen = open
 	menu.Visible = open
+	tween(keyStroke, motionInfo(0.15), {
+		Color = open and CONFIG.colour.accent or CONFIG.colour.edge,
+		Transparency = open and 0.15 or 0.35,
+	})
 end
 
 ----------------------------------------------------------------------
@@ -1093,11 +1135,8 @@ handlers.infyield = function()
 	runScript("Inf Yield", CONFIG.scripts.infyield)
 end
 handlers.meow = function()
-	notify("Click 2 MEOW!", "Meow")
 	playSound(CONFIG.meowSound, 0.8)
-end
-handlers.menu = function()
-	setMenuOpen(not menuOpen)
+	notify("Click 2 MEOW!", "Meow", nil, true)
 end
 
 menuRow(1, "Shop", "SHOP", "server hop", function()
@@ -1119,6 +1158,17 @@ track(orb.MouseEnter:Connect(function()
 end))
 track(orb.MouseLeave:Connect(function()
 	tween(glyph, motionInfo(0.12), { Size = UDim2.fromOffset(18, 18) })
+end))
+
+-- the K button opens and closes its menu
+track(keyButton.MouseEnter:Connect(function()
+	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0.7 })
+end))
+track(keyButton.MouseLeave:Connect(function()
+	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0 })
+end))
+track(keyButton.Activated:Connect(function()
+	setMenuOpen(not menuOpen)
 end))
 
 -- K toggles the menu, Escape closes it
@@ -1177,7 +1227,7 @@ end)
 ----------------------------------------------------------------------
 
 _G.Kbar = {
-	version = "1.01",
+	version = "1.02",
 	notify = notify,
 	setOpen = setOpen,
 	setMenuOpen = setMenuOpen,
