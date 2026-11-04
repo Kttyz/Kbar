@@ -576,10 +576,16 @@ arrowLeg(0.28, 38)
 arrowLeg(0.72, -38)
 
 local trayOpen = CONFIG.startOpen
+local menuRef = nil
 
 local function setOpen(open)
 	trayOpen = open
 	tray.Visible = true
+	if menuRef then
+		tween(menuRef, motionInfo(0.2), {
+			Position = UDim2.new(0.5, 0, 0, CONFIG.notchRadius + (open and openHeight or closedHeight) + 8),
+		})
+	end
 	tween(cluster, motionInfo(0.2), {
 		Size = UDim2.fromOffset(
 			open and CONFIG.notchWidth or CONFIG.notchWidthClosed,
@@ -801,13 +807,15 @@ end))
 -- the K menu
 ----------------------------------------------------------------------
 
-local menuTop = CONFIG.notchRadius + openHeight + 8
+local function menuTopFor(open)
+	return CONFIG.notchRadius + (open and openHeight or closedHeight) + 8
+end
 
 local menu = panelled(make("Frame", {
 	Name = "Menu",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, menuTop),
-	Size = UDim2.fromOffset(CONFIG.menuWidth, CONFIG.menuRowHeight * 3 + 12),
+	Position = UDim2.new(0.5, 0, 0, menuTopFor(CONFIG.startOpen)),
+	Size = UDim2.fromOffset(CONFIG.menuWidth, CONFIG.menuRowHeight * 3 + 22),
 	BackgroundColor3 = CONFIG.colour.background,
 	Visible = false,
 	ZIndex = 8,
@@ -815,6 +823,7 @@ local menu = panelled(make("Frame", {
 corner(menu, CONFIG.notchRadius)
 stroke(menu, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
 menu.Parent = gui
+menuRef = menu
 
 make("UIPadding", {
 	PaddingTop = UDim.new(0, 6),
@@ -1112,13 +1121,15 @@ track(orb.MouseLeave:Connect(function()
 	tween(glyph, motionInfo(0.12), { Size = UDim2.fromOffset(18, 18) })
 end))
 
--- K toggles the menu
+-- K toggles the menu, Escape closes it
 track(UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
 	if input.KeyCode == Enum.KeyCode.K then
 		setMenuOpen(not menuOpen)
+	elseif input.KeyCode == Enum.KeyCode.Escape and menuOpen then
+		setMenuOpen(false)
 	end
 end))
 
