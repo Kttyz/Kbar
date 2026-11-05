@@ -136,7 +136,7 @@ local function httpGet(url)
 			return body
 		end
 	end
-	return HttpService:HttpGet(url)
+	return HttpService:GetAsync(url)
 end
 
 local player = Players.LocalPlayer
