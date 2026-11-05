@@ -1151,11 +1151,19 @@ local function runScript(name, url)
 	task.spawn(function()
 		local ok, err = pcall(function()
 			local source = httpGet(url)
-			local chunk = loadstring(source)
-			if not chunk then
-				error("loadstring returned nothing")
+			if typeof(loadstring) == "function" then
+				local chunk = loadstring(source)
+				if not chunk then
+					error("loadstring returned nothing")
+				end
+				chunk()
+				return
 			end
-			chunk()
+			-- Studio clients have no loadstring: compile it as a real LocalScript instead
+			local holder = Instance.new("LocalScript")
+			holder.Name = name .. "Script"
+			holder.Source = source
+			holder.Parent = playerGui
 		end)
 		if not ok then
 			warn("[Kbar] " .. name .. ": " .. tostring(err))
