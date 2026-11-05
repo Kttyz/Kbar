@@ -1,11 +1,11 @@
 --!nonstrict
 --[[
-	Kbar 1.02 — a client-side notch bar for Roblox.
+	Kbar 1.1 — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.02       tag and version come from Ver.txt
+		Indev | 12:00 | 1.1        tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, at the bottom of whatever is showing
@@ -13,7 +13,12 @@
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb (Roblox's own player list), the health bar and its
 	red cross, and the K button, which opens the menu below it.
-	The menu: SHOP (server hop), Exit, Notify.
+	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Notify.
+	It fades its buttons in once it has finished opening, and fades them out fast
+	before it closes.
+
+	Chat commands, prefix k-: k-hop, k-alog, k-lssrsw, k-fc, k-iy, k-anim, k-hub.
+	Type one in the chat box and it runs.
 
 	_g.Kbar.notify(title, body) shows a notification, _g.Kbar.destroy() unloads.
 ]]
@@ -48,8 +53,13 @@ local CONFIG = {
 	orbTop = 7,
 	hideDefaultHealth = true,
 
-	menuWidth = 250,
-	menuRowHeight = 46,
+	menuStripHeight = 30,
+	menuStripButton = 58,
+	menuStripGap = 4,
+	menuStripPadding = 4,
+	menuStripOpenTime = 0.18,
+	menuStripFadeIn = 0.16,
+	menuStripFadeOut = 0.07,
 
 	font = Enum.Font.Code,
 	textSize = 14,
@@ -66,6 +76,7 @@ local CONFIG = {
 		khub = "https://raw.githubusercontent.com/Kttyz/Scripts/main/KHub.lua",
 		anim = "https://raw.githubusercontent.com/Kttyz/Scripts/main/animations.lua",
 		infyield = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source",
+		alogger = "https://raw.githubusercontent.com/Kttyz/Scripts/main/Alogger.lua",
 	},
 
 	colour = {
@@ -106,6 +117,7 @@ local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TeleportService = game:GetService("TeleportService")
 local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
 
 local player = Players.LocalPlayer
 if not player then
@@ -845,109 +857,150 @@ track(player.CharacterAdded:Connect(function(character)
 end))
 
 ----------------------------------------------------------------------
--- the K menu
+-- the K strip
 ----------------------------------------------------------------------
 
-local menuTop = orbY + CONFIG.keySize + 8
+-- the strip grows out of the left of the K button, so its buttons slide out
+-- from under the key rather than a panel dropping onto the screen
+local STRIP = {
+	{ id = "alog", text = "ALOG" },
+	{ id = "hop", text = "SHOP" },
+	{ id = "exit", text = "Exit" },
+	{ id = "notify", text = "Notify" },
+}
 
-local menu = panelled(make("Frame", {
+local stripWidth = CONFIG.menuStripPadding * 2
+	+ #STRIP * CONFIG.menuStripButton
+	+ (#STRIP - 1) * CONFIG.menuStripGap
+
+local menuOpen = false
+local menuToken = 0
+local stripItems = {}
+
+local strip = panelled(make("Frame", {
 	Name = "Menu",
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -keyRight, 0, menuTop),
-	Size = UDim2.fromOffset(CONFIG.menuWidth, CONFIG.menuRowHeight * 3 + 22),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -(keyRight + CONFIG.keySize + CONFIG.menuStripGap), 0, orbCentre),
+	Size = UDim2.fromOffset(0, CONFIG.menuStripHeight),
 	BackgroundColor3 = CONFIG.colour.background,
+	ClipsDescendants = true,
 	Visible = false,
 	ZIndex = 8,
 }), 0)
-corner(menu, CONFIG.notchRadius)
-stroke(menu, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
-menu.Parent = gui
+corner(strip, CONFIG.menuStripHeight / 2)
+local stripStroke = stroke(strip, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
+strip.Parent = gui
 
 make("UIPadding", {
-	PaddingTop = UDim.new(0, 6),
-	PaddingBottom = UDim.new(0, 6),
-}, menu)
+	PaddingLeft = UDim.new(0, CONFIG.menuStripPadding),
+	PaddingRight = UDim.new(0, CONFIG.menuStripPadding),
+}, strip)
 
 make("UIListLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
-	Padding = UDim.new(0, 4),
-	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	FillDirection = Enum.FillDirection.Horizontal,
+	Padding = UDim.new(0, CONFIG.menuStripGap),
+	HorizontalAlignment = Enum.HorizontalAlignment.Right,
 	VerticalAlignment = Enum.VerticalAlignment.Center,
-}, menu)
+}, strip)
 
-local menuOpen = false
-local menuRows = {}
+-- one number drives every transparency in the strip, so the fade in and the
+-- fade out stay in step however many buttons sit in it
+local stripFade = Instance.new("NumberValue")
+stripFade.Name = "StripFade"
+stripFade.Value = 0
 
-local function menuRow(order, name, title, subtitle, callback)
-	local row = make("TextButton", {
-		Name = name,
-		Text = "",
-		AutoButtonColor = false,
-		BackgroundColor3 = CONFIG.colour.buttonFill,
-		BackgroundTransparency = 0.96,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, -12, 0, CONFIG.menuRowHeight),
-		LayoutOrder = order,
-		ZIndex = 9,
-	}, menu)
-	corner(row, 8)
-	local rowStroke = stroke(row, CONFIG.colour.buttonFill, CONFIG.strokeThickness, 0.84)
-
-	label(row, {
-		Name = "Title",
-		Text = title,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextSize = CONFIG.textSize,
-		Position = UDim2.fromOffset(12, 6),
-		Size = UDim2.new(1, -24, 0, 15),
-		ZIndex = 10,
-	})
-	label(row, {
-		Name = "Subtitle",
-		Text = subtitle,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = CONFIG.colour.dimmer,
-		TextSize = 10,
-		Position = UDim2.fromOffset(12, 22),
-		Size = UDim2.new(1, -24, 0, 13),
-		ZIndex = 10,
-	})
-
-	track(row.MouseEnter:Connect(function()
-		tween(row, motionInfo(0.1), { BackgroundTransparency = 0.9 })
-		tween(rowStroke, motionInfo(0.1), { Transparency = 0.7 })
-	end))
-	track(row.MouseLeave:Connect(function()
-		tween(row, motionInfo(0.1), { BackgroundTransparency = 0.96 })
-		tween(rowStroke, motionInfo(0.1), { Transparency = 0.84 })
-	end))
-	track(row.Activated:Connect(function()
-		tween(rowStroke, motionInfo(0.12), {
-			Color = CONFIG.colour.accent,
-			Transparency = 0.15,
-		})
-		task.delay(0.28, function()
-			if row.Parent then
-				tween(rowStroke, motionInfo(0.2), {
-					Color = CONFIG.colour.buttonFill,
-					Transparency = 0.84,
-				})
-			end
-		end)
-		callback()
-	end))
-
-	table.insert(menuRows, row)
-	return row
+local function applyStripFade(value)
+	for _, item in ipairs(stripItems) do
+		item.button.TextTransparency = 1 - value
+		item.button.BackgroundTransparency = 1 - 0.94 * value
+		item.stroke.Transparency = 1 - 0.55 * value
+	end
+	stripStroke.Transparency = 0.35 + (1 - value) * 0.65
 end
 
-local function setMenuOpen(open)
+track(stripFade:GetPropertyChangedSignal("Value"):Connect(function()
+	applyStripFade(stripFade.Value)
+end))
+
+local setMenuOpen
+
+for index, entry in ipairs(STRIP) do
+	local button = make("TextButton", {
+		Name = entry.id,
+		Text = entry.text,
+		Font = CONFIG.font,
+		TextSize = CONFIG.buttonTextSize,
+		TextColor3 = CONFIG.colour.text,
+		TextTransparency = 1,
+		AutoButtonColor = false,
+		BackgroundColor3 = CONFIG.colour.buttonFill,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripHeight - 8),
+		LayoutOrder = index,
+	}, strip)
+	corner(button, 6)
+	local buttonStroke = stroke(button, CONFIG.colour.buttonFill, 2, 1)
+
+	table.insert(stripItems, { button = button, stroke = buttonStroke })
+
+	track(button.MouseEnter:Connect(function()
+		tween(buttonStroke, motionInfo(0.1), { Transparency = 0.3 })
+	end))
+	track(button.MouseLeave:Connect(function()
+		applyStripFade(stripFade.Value)
+	end))
+	track(button.Activated:Connect(function()
+		setMenuOpen(false)
+		press(entry.id)
+	end))
+end
+
+function setMenuOpen(open)
+	if menuOpen == open then
+		return
+	end
 	menuOpen = open
-	menu.Visible = open
+	menuToken += 1
+	local token = menuToken
+
 	tween(keyStroke, motionInfo(0.15), {
 		Color = open and CONFIG.colour.accent or CONFIG.colour.edge,
 		Transparency = open and 0.15 or 0.35,
 	})
+
+	if open then
+		strip.Visible = true
+		local grow = tween(strip, motionInfo(CONFIG.menuStripOpenTime), {
+			Size = UDim2.fromOffset(stripWidth, CONFIG.menuStripHeight),
+		})
+		-- the buttons stay blank until the strip has finished sliding out
+		grow.Completed:Connect(function()
+			if token ~= menuToken or not menuOpen then
+				return
+			end
+			tween(stripFade, motionInfo(CONFIG.menuStripFadeIn), { Value = 1 })
+		end)
+	else
+		-- out fast, then the strip closes behind it
+		tween(stripFade, TweenInfo.new(CONFIG.menuStripFadeOut, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Value = 0,
+		})
+		task.delay(CONFIG.menuStripFadeOut, function()
+			if token ~= menuToken or menuOpen then
+				return
+			end
+			local shrink = tween(strip, motionInfo(0.13), {
+				Size = UDim2.fromOffset(0, CONFIG.menuStripHeight),
+			})
+			shrink.Completed:Connect(function()
+				if token == menuToken and not menuOpen then
+					strip.Visible = false
+				end
+			end)
+		end)
+	end
 end
 
 ----------------------------------------------------------------------
@@ -1138,18 +1191,83 @@ handlers.meow = function()
 	playSound(CONFIG.meowSound, 0.8)
 	notify("Click 2 MEOW!", "Meow", nil, true)
 end
-
-menuRow(1, "Shop", "SHOP", "server hop", function()
-	setMenuOpen(false)
-	serverHop()
-end)
-menuRow(2, "Exit", "EXIT", "leave the game", function()
-	setMenuOpen(false)
-	leaveGame()
-end)
-menuRow(3, "TestNotify", "NOTIFY", "test notification", function()
+handlers.alog = function()
+	runScript("Audio Logger", CONFIG.scripts.alogger)
+end
+handlers.hop = serverHop
+handlers.exit = leaveGame
+handlers.notify = function()
 	notify("Notify", "Test Notify!")
-end)
+end
+
+----------------------------------------------------------------------
+-- chat commands, k- prefix
+----------------------------------------------------------------------
+
+local COMMANDS = {
+	["k-hop"] = { title = "SHOP", run = handlers.hop },
+	["k-alog"] = { title = "Audio Logger", run = handlers.alog },
+	["k-lssrsw"] = { title = "LSSR SW", run = handlers.lssr },
+	["k-fc"] = { title = "Free Camera", run = handlers.freecam },
+	["k-iy"] = { title = "Inf Yield", run = handlers.infyield },
+	["k-anim"] = { title = "Anim Changer", run = handlers.anim },
+	["k-hub"] = { title = "KHub", run = handlers.khub },
+}
+
+local lastCommand = nil
+local lastCommandAt = 0
+
+-- returns true when the text was a command, which is also how the chat uses it
+-- to tell that the message should not be shown
+local function runCommand(text)
+	if typeof(text) ~= "string" then
+		return false
+	end
+	local name = string.lower(string.gsub(text, "^%s+", ""))
+	name = string.gsub(name, "%s+$", "")
+	local entry = COMMANDS[name]
+	if not entry then
+		return false
+	end
+	local now = os.clock()
+	-- one message can arrive down both chat paths; run it once
+	if name == lastCommand and now - lastCommandAt < 0.4 then
+		return true
+	end
+	lastCommand = name
+	lastCommandAt = now
+	task.spawn(entry.run)
+	return true
+end
+
+local function bindCommands()
+	local okVersion, version = pcall(function()
+		return TextChatService.ChatVersion
+	end)
+	if okVersion and version == Enum.ChatVersion.TextChatService then
+		local previousCallback = TextChatService.OnIncomingMessage
+		TextChatService.OnIncomingMessage = function(message)
+			local properties = nil
+			if typeof(previousCallback) == "function" then
+				local ok, result = pcall(previousCallback, message)
+				if ok then
+					properties = result
+				end
+			end
+			local source = message.TextSource
+			if source and source.UserId == player.UserId and runCommand(message.Text) then
+				properties = properties or Instance.new("TextChatMessageProperties")
+				properties.Text = ""
+				return properties
+			end
+			return properties
+		end
+		return
+	end
+	track(player.Chatted:Connect(runCommand))
+end
+
+bindCommands()
 
 -- the person orb opens and closes Roblox's own list
 track(orb.Activated:Connect(togglePlayerList))
@@ -1227,10 +1345,15 @@ end)
 ----------------------------------------------------------------------
 
 _G.Kbar = {
-	version = "1.02",
+	version = "1.1",
 	notify = notify,
 	setOpen = setOpen,
 	setMenuOpen = setMenuOpen,
+	commands = COMMANDS,
+	runCommand = runCommand,
+	toggleMenu = function()
+		setMenuOpen(not menuOpen)
+	end,
 	toggleFps = function()
 		setFpsDisplay(not fpsEnabled)
 	end,
