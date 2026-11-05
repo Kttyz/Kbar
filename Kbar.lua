@@ -932,8 +932,8 @@ local function drawStrip()
 	)
 	for _, item in ipairs(stripItems) do
 		item.button.TextTransparency = 1 - stripFade
-		item.button.BackgroundTransparency = 1 - 0.94 * stripFade
-		item.stroke.Transparency = 1 - 0.6 * stripFade
+		item.button.BackgroundTransparency = 1 - 0.85 * stripFade
+		item.stroke.Transparency = 1 - 0.45 * stripFade
 	end
 end
 
@@ -946,7 +946,8 @@ local function animate(duration, goal, get, set)
 	local from = get()
 	local start = os.clock()
 	local token = menuToken
-	local span = motionInfo(duration).Duration
+	-- TweenInfo's length is .Time; there is no .Duration on it
+	local span = motionInfo(duration).Time
 	while true do
 		if token ~= menuToken then
 			return false
@@ -972,7 +973,7 @@ for index, entry in ipairs(STRIP) do
 		TextColor3 = CONFIG.colour.text,
 		TextTransparency = 1,
 		AutoButtonColor = false,
-		BackgroundColor3 = CONFIG.colour.buttonFill,
+		BackgroundColor3 = CONFIG.colour.panelTop,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripButtonHeight),
@@ -980,7 +981,7 @@ for index, entry in ipairs(STRIP) do
 		ZIndex = 9,
 	}, strip)
 	corner(button, 6)
-	local buttonStroke = stroke(button, CONFIG.colour.buttonFill, 2, 1)
+	local buttonStroke = stroke(button, CONFIG.colour.edge, 2, 1)
 
 	table.insert(stripItems, { button = button, stroke = buttonStroke })
 
@@ -991,7 +992,7 @@ for index, entry in ipairs(STRIP) do
 		tween(buttonStroke, motionInfo(0.1), { Transparency = 0.3 })
 	end))
 	track(button.MouseLeave:Connect(function()
-		buttonStroke.Transparency = 1 - 0.55 * stripFade
+		buttonStroke.Transparency = 1 - 0.45 * stripFade
 	end))
 	track(button.Activated:Connect(function()
 		if not menuOpen then
