@@ -32,11 +32,11 @@ local CONFIG = {
 
 	notchWidth = 384,
 	notchWidthClosed = 232,
-	notchRadius = 14,
-	infoRowHeight = 26,
+	notchRadius = 12,
+	infoRowHeight = 22,
 	trayHeight = 94,
-	chevronHeight = 12,
-	chevronArrowInset = 14,
+	chevronHeight = 10,
+	chevronArrowInset = 8,
 
 	cellWidth = 76,
 	cellHeight = 38,
@@ -54,14 +54,16 @@ local CONFIG = {
 	orbTop = 7,
 	hideDefaultHealth = true,
 
-	menuStripHeight = 30,
-	menuStripButton = 58,
+	menuStripHeight = 42,
+	menuStripKey = 34,
+	menuStripButton = 62,
+	menuStripButtonHeight = 34,
 	menuStripGap = 4,
 	menuStripPadding = 4,
-	menuStripOpenTime = 0.18,
-	menuStripFadeIn = 0.16,
+	menuStripOpenTime = 0.2,
+	menuStripFadeIn = 0.14,
 	menuStripFadeOut = 0.07,
-	menuStripCloseTime = 0.13,
+	menuStripCloseTime = 0.12,
 
 	-- shown until Ver.txt answers; never a placeholder
 	versionFallback = "1.1",
@@ -457,7 +459,7 @@ cellSeparator(4)
 
 local verLabel = label(cells, {
 	Name = "Ver",
-	Text = "1.0",
+	Text = CONFIG.versionFallback,
 	TextColor3 = CONFIG.colour.dim,
 	LayoutOrder = 5,
 	AutomaticSize = Enum.AutomaticSize.X,
@@ -799,22 +801,7 @@ local shoulders = make("Frame", {
 }, glyph)
 corner(shoulders, 4)
 
--- the K button, its own thing, beside the health bar
-local keyButton = make("TextButton", {
-	Name = "MenuKey",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -keyRight, 0, orbCentre),
-	Size = UDim2.fromOffset(CONFIG.keySize, CONFIG.keySize),
-	Text = "K",
-	Font = CONFIG.font,
-	TextSize = CONFIG.textSize + 2,
-	TextColor3 = CONFIG.colour.text,
-	AutoButtonColor = false,
-	BackgroundColor3 = CONFIG.colour.background,
-	ZIndex = 3,
-}, gui)
-corner(keyButton, 8)
-local keyStroke = stroke(keyButton, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
+-- the K button is created with the pill below, so it can sit inside it
 
 -- health follows the local character, and rebinds on respawn
 local healthConnection = nil
@@ -877,9 +864,9 @@ local STRIP = {
 	{ id = "notify", text = "Notify" },
 }
 
-local stripWidth = CONFIG.menuStripPadding * 2
-	+ #STRIP * CONFIG.menuStripButton
-	+ (#STRIP - 1) * CONFIG.menuStripGap
+-- closed, the pill is the K alone; open, it is the K plus every button
+local stripClosedWidth = CONFIG.menuStripPadding * 2 + CONFIG.menuStripKey
+local stripOpenWidth = stripClosedWidth + #STRIP * (CONFIG.menuStripButton + CONFIG.menuStripGap)
 
 local menuOpen = false
 local menuToken = 0
@@ -891,17 +878,19 @@ local stripItems = {}
 local stripFill = 0
 local stripFade = 0
 
+-- the pill's right edge is pinned where the K sits, so every pixel it grows
+-- comes out of its left side and the buttons slide out from under the K
 local strip = panelled(make("Frame", {
 	Name = "Menu",
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -(keyRight + CONFIG.keySize + CONFIG.menuStripGap), 0, orbCentre),
-	Size = UDim2.fromOffset(0, CONFIG.menuStripHeight),
+	Position = UDim2.new(1, -keyRight, 0, orbCentre),
+	Size = UDim2.fromOffset(stripClosedWidth, CONFIG.menuStripHeight),
 	BackgroundColor3 = CONFIG.colour.background,
 	ClipsDescendants = true,
-	Visible = false,
+	Visible = true,
 	ZIndex = 8,
 }), 0)
-corner(strip, CONFIG.menuStripHeight / 2)
+corner(strip, 10)
 local stripStroke = stroke(strip, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
 strip.Parent = gui
 
@@ -914,18 +903,38 @@ make("UIListLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	FillDirection = Enum.FillDirection.Horizontal,
 	Padding = UDim.new(0, CONFIG.menuStripGap),
-	HorizontalAlignment = Enum.HorizontalAlignment.Right,
+	-- left, so the K holds the left end and the buttons run to the right edge
+	HorizontalAlignment = Enum.HorizontalAlignment.Left,
 	VerticalAlignment = Enum.VerticalAlignment.Center,
 }, strip)
 
+local keyButton = make("TextButton", {
+	Name = "MenuKey",
+	Text = "K",
+	Font = CONFIG.font,
+	TextSize = CONFIG.textSize + 2,
+	TextColor3 = CONFIG.colour.text,
+	AutoButtonColor = false,
+	BackgroundColor3 = CONFIG.colour.buttonFill,
+	BackgroundTransparency = 0.94,
+	BorderSizePixel = 0,
+	Size = UDim2.fromOffset(CONFIG.menuStripKey, CONFIG.menuStripKey),
+	LayoutOrder = 0,
+	ZIndex = 9,
+}, strip)
+corner(keyButton, 8)
+local keyStroke = stroke(keyButton, CONFIG.colour.edge, CONFIG.strokeThickness, 0.4)
+
 local function drawStrip()
-	strip.Size = UDim2.fromOffset(stripWidth * stripFill, CONFIG.menuStripHeight)
+	strip.Size = UDim2.fromOffset(
+		stripClosedWidth + (stripOpenWidth - stripClosedWidth) * stripFill,
+		CONFIG.menuStripHeight
+	)
 	for _, item in ipairs(stripItems) do
 		item.button.TextTransparency = 1 - stripFade
 		item.button.BackgroundTransparency = 1 - 0.94 * stripFade
-		item.stroke.Transparency = 1 - 0.55 * stripFade
+		item.stroke.Transparency = 1 - 0.6 * stripFade
 	end
-	stripStroke.Transparency = 0.35 + (1 - stripFade) * 0.65
 end
 
 -- walks one number to `goal` over `duration`, a frame at a time, and paints
@@ -966,8 +975,8 @@ for index, entry in ipairs(STRIP) do
 		BackgroundColor3 = CONFIG.colour.buttonFill,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripHeight - 8),
-		LayoutOrder = index,
+		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripButtonHeight),
+		LayoutOrder = index + 1,
 		ZIndex = 9,
 	}, strip)
 	corner(button, 6)
@@ -1007,7 +1016,6 @@ setMenuOpen = function(open)
 	})
 
 	if open then
-		strip.Visible = true
 		task.spawn(function()
 			-- slide out empty first, then fade the labels in once it is fully open
 			local slid = animate(CONFIG.menuStripOpenTime, 1, function()
@@ -1047,7 +1055,6 @@ setMenuOpen = function(open)
 			if not slid then
 				return
 			end
-			strip.Visible = false
 		end)
 	end
 end
@@ -1350,10 +1357,10 @@ end))
 
 -- the K button opens and closes its menu
 track(keyButton.MouseEnter:Connect(function()
-	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0.7 })
+	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0.84 })
 end))
 track(keyButton.MouseLeave:Connect(function()
-	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0 })
+	tween(keyButton, motionInfo(0.1), { BackgroundTransparency = 0.94 })
 end))
 track(keyButton.Activated:Connect(function()
 	setMenuOpen(not menuOpen)
@@ -1379,30 +1386,30 @@ end))
 -- should show. os.date is the fallback for executors that hide DateTime, and a
 -- raw os.time stamp is the last resort, so the label never sits on a placeholder.
 local function localClock()
+	-- FormatLocalTime already answers in the player's own zone, and it takes a
+	-- strftime pattern. Putting ToLocalTime() in front of it returns something
+	-- with no such method, and "HH:mm" is not a pattern, so the clock never moved.
 	local okDate, text = pcall(function()
-		return DateTime.now():ToLocalTime():FormatLocalTime("HH:mm", "en-us")
+		return DateTime.now():FormatLocalTime("%H:%M", "en-us")
 	end)
-	if okDate and typeof(text) == "string" and #text == 5 then
+	if okDate and typeof(text) == "string" and string.match(text, "^%d%d:%d%d$") then
 		return text
 	end
 	local okOs, dated = pcall(function()
 		return os.date("%H:%M")
 	end)
-	if okOs and typeof(dated) == "string" and #dated == 5 then
+	if okOs and typeof(dated) == "string" and string.match(dated, "^%d%d:%d%d$") then
 		return dated
 	end
-	local okTime, stamp = pcall(function()
-		return os.time()
-	end)
-	if okTime and typeof(stamp) == "number" then
-		return string.format("%02d:%02d", math.floor(stamp / 3600) % 24, math.floor(stamp / 60) % 60)
-	end
-	return "--:--"
+	return nil
 end
 
 task.spawn(function()
 	while true do
-		clockLabel.Text = localClock()
+		local reading = localClock()
+		if reading then
+			clockLabel.Text = reading
+		end
 		local okNow, now = pcall(function()
 			return os.time()
 		end)
@@ -1420,18 +1427,26 @@ local function refreshVersion()
 		return game:HttpGet(CONFIG.verUrl)
 	end)
 	if ok and typeof(body) == "string" and #body > 0 then
-		local lines = {}
+		local tag, version
 		for line in string.gmatch(body, "[^\r\n]+") do
-			table.insert(lines, line)
+			local trimmed = string.match(line, "^%s*(.-)%s*$") or ""
+			if #trimmed > 0 then
+				if not tag then
+					tag = trimmed
+				elseif not version then
+					version = trimmed
+				end
+			end
 		end
-		local tag = lines[1]
-		local version = lines[2]
-		if tag and #tag > 0 then
+		-- a version is digits and dots. Anything else in that line is noise, not
+		-- a number to print, so it is dropped rather than shown.
+		if version and not string.match(version, "^%d+%.?%d*$") then
+			version = nil
+		end
+		if tag then
 			tagLabel.Text = tag
 		end
-		if version and #version > 0 then
-			verLabel.Text = version
-		end
+		verLabel.Text = version or CONFIG.versionFallback
 		return
 	end
 	-- no answer: show what this file says it is, not a placeholder
