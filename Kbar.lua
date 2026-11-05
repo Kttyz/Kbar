@@ -8,14 +8,14 @@
 		Indev | 12:00 | 1.1        tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
-		the arrow, inside the box, at the bottom of whatever is showing
+		the arrow, inside the box, bottom right of whatever is showing
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb (Roblox's own player list), the health bar and its
 	red cross, and the K button, which opens the menu below it.
 	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Notify.
-	It fades its buttons in once it has finished opening, and fades them out fast
-	before it closes.
+	It slides out empty, fades its labels in only once it is fully open, and on the
+	way back it fades them out fast before the strip itself closes.
 
 	Chat commands, prefix k-: k-hop, k-alog, k-lssrsw, k-fc, k-iy, k-anim, k-hub.
 	Type one in the chat box and it runs.
@@ -33,9 +33,10 @@ local CONFIG = {
 	notchWidth = 384,
 	notchWidthClosed = 232,
 	notchRadius = 14,
-	infoRowHeight = 32,
+	infoRowHeight = 26,
 	trayHeight = 94,
-	chevronHeight = 16,
+	chevronHeight = 12,
+	chevronArrowInset = 14,
 
 	cellWidth = 76,
 	cellHeight = 38,
@@ -60,6 +61,10 @@ local CONFIG = {
 	menuStripOpenTime = 0.18,
 	menuStripFadeIn = 0.16,
 	menuStripFadeOut = 0.07,
+	menuStripCloseTime = 0.13,
+
+	-- shown until Ver.txt answers; never a placeholder
+	versionFallback = "1.1",
 
 	font = Enum.Font.Code,
 	textSize = 14,
@@ -538,12 +543,13 @@ for index, entry in ipairs(TRAY) do
 	end))
 end
 
--- the chevron lives inside the notch, at its bottom edge, and rides down with the tray
+-- the chevron is a full-width strip along the bottom of the notch, so the arrow can
+-- sit at the right edge with the info row's text staying centred above it
 local chevron = make("TextButton", {
 	Name = "Chevron",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, CONFIG.infoRowHeight),
-	Size = UDim2.fromOffset(56, CONFIG.chevronHeight),
+	AnchorPoint = Vector2.new(0, 0),
+	Position = UDim2.fromOffset(0, CONFIG.infoRowHeight),
+	Size = UDim2.new(1, 0, 0, CONFIG.chevronHeight),
 	BackgroundTransparency = 1,
 	AutoButtonColor = false,
 	Text = "",
@@ -552,7 +558,9 @@ local chevron = make("TextButton", {
 
 local chevronPlate = make("Frame", {
 	Name = "Plate",
-	Size = UDim2.fromScale(1, 1),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -8, 0.5, 0),
+	Size = UDim2.fromOffset(40, CONFIG.chevronHeight),
 	BackgroundColor3 = CONFIG.colour.buttonFill,
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
@@ -562,8 +570,8 @@ corner(chevronPlate, 8)
 
 local arrow = make("Frame", {
 	Name = "Arrow",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -CONFIG.chevronArrowInset, 0.5, 0),
 	Size = UDim2.fromOffset(11, 7),
 	BackgroundTransparency = 1,
 	ZIndex = 6,
@@ -600,7 +608,7 @@ local function setOpen(open)
 		),
 	})
 	tween(chevron, motionInfo(0.2), {
-		Position = UDim2.new(0.5, 0, 0, open and (CONFIG.infoRowHeight + CONFIG.trayHeight) or CONFIG.infoRowHeight),
+		Position = UDim2.new(0, 0, 0, open and (CONFIG.infoRowHeight + CONFIG.trayHeight) or CONFIG.infoRowHeight),
 	})
 	tween(arrow, motionInfo(0.2), { Rotation = open and 180 or 0 })
 	for _, leg in ipairs(arrowLegs) do
@@ -877,6 +885,12 @@ local menuOpen = false
 local menuToken = 0
 local stripItems = {}
 
+-- how far the strip is out, and how solid its labels are, both 0..1. The
+-- animation writes these two numbers every frame and drawStrip paints from
+-- them, so an interrupted open can be closed from wherever it got to.
+local stripFill = 0
+local stripFade = 0
+
 local strip = panelled(make("Frame", {
 	Name = "Menu",
 	AnchorPoint = Vector2.new(1, 0.5),
@@ -904,24 +918,39 @@ make("UIListLayout", {
 	VerticalAlignment = Enum.VerticalAlignment.Center,
 }, strip)
 
--- one number drives every transparency in the strip, so the fade in and the
--- fade out stay in step however many buttons sit in it
-local stripFade = Instance.new("NumberValue")
-stripFade.Name = "StripFade"
-stripFade.Value = 0
-
-local function applyStripFade(value)
+local function drawStrip()
+	strip.Size = UDim2.fromOffset(stripWidth * stripFill, CONFIG.menuStripHeight)
 	for _, item in ipairs(stripItems) do
-		item.button.TextTransparency = 1 - value
-		item.button.BackgroundTransparency = 1 - 0.94 * value
-		item.stroke.Transparency = 1 - 0.55 * value
+		item.button.TextTransparency = 1 - stripFade
+		item.button.BackgroundTransparency = 1 - 0.94 * stripFade
+		item.stroke.Transparency = 1 - 0.55 * stripFade
 	end
-	stripStroke.Transparency = 0.35 + (1 - value) * 0.65
+	stripStroke.Transparency = 0.35 + (1 - stripFade) * 0.65
 end
 
-track(stripFade:GetPropertyChangedSignal("Value"):Connect(function()
-	applyStripFade(stripFade.Value)
-end))
+-- walks one number to `goal` over `duration`, a frame at a time, and paints
+-- through drawStrip as it goes. Returns false the moment a newer open or close
+-- takes over, so an interrupted animation never lands on top of the next one.
+local function animate(duration, goal, get, set)
+	-- `from` is read once: alpha is the fraction of the whole move, so applying
+	-- it to a value that is already moving would race ahead of the clock
+	local from = get()
+	local start = os.clock()
+	local token = menuToken
+	local span = motionInfo(duration).Duration
+	while true do
+		if token ~= menuToken then
+			return false
+		end
+		local elapsed = os.clock() - start
+		local alpha = span > 0 and math.min(elapsed / span, 1) or 1
+		set(from + (goal - from) * alpha)
+		if alpha >= 1 then
+			return true
+		end
+		task.wait()
+	end
+end
 
 local setMenuOpen
 
@@ -939,6 +968,7 @@ for index, entry in ipairs(STRIP) do
 		BorderSizePixel = 0,
 		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripHeight - 8),
 		LayoutOrder = index,
+		ZIndex = 9,
 	}, strip)
 	corner(button, 6)
 	local buttonStroke = stroke(button, CONFIG.colour.buttonFill, 2, 1)
@@ -946,24 +976,30 @@ for index, entry in ipairs(STRIP) do
 	table.insert(stripItems, { button = button, stroke = buttonStroke })
 
 	track(button.MouseEnter:Connect(function()
+		if stripFade < 0.5 then
+			return
+		end
 		tween(buttonStroke, motionInfo(0.1), { Transparency = 0.3 })
 	end))
 	track(button.MouseLeave:Connect(function()
-		applyStripFade(stripFade.Value)
+		buttonStroke.Transparency = 1 - 0.55 * stripFade
 	end))
 	track(button.Activated:Connect(function()
+		if not menuOpen then
+			return
+		end
 		setMenuOpen(false)
 		press(entry.id)
 	end))
 end
 
-function setMenuOpen(open)
+setMenuOpen = function(open)
+	open = not not open
 	if menuOpen == open then
 		return
 	end
 	menuOpen = open
 	menuToken += 1
-	local token = menuToken
 
 	tween(keyStroke, motionInfo(0.15), {
 		Color = open and CONFIG.colour.accent or CONFIG.colour.edge,
@@ -972,36 +1008,51 @@ function setMenuOpen(open)
 
 	if open then
 		strip.Visible = true
-		local grow = tween(strip, motionInfo(CONFIG.menuStripOpenTime), {
-			Size = UDim2.fromOffset(stripWidth, CONFIG.menuStripHeight),
-		})
-		-- the buttons stay blank until the strip has finished sliding out
-		grow.Completed:Connect(function()
-			if token ~= menuToken or not menuOpen then
+		task.spawn(function()
+			-- slide out empty first, then fade the labels in once it is fully open
+			local slid = animate(CONFIG.menuStripOpenTime, 1, function()
+				return stripFill
+			end, function(value)
+				stripFill = value
+				drawStrip()
+			end)
+			if not slid then
 				return
 			end
-			tween(stripFade, motionInfo(CONFIG.menuStripFadeIn), { Value = 1 })
+			animate(CONFIG.menuStripFadeIn, 1, function()
+				return stripFade
+			end, function(value)
+				stripFade = value
+				drawStrip()
+			end)
 		end)
 	else
-		-- out fast, then the strip closes behind it
-		tween(stripFade, TweenInfo.new(CONFIG.menuStripFadeOut, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Value = 0,
-		})
-		task.delay(CONFIG.menuStripFadeOut, function()
-			if token ~= menuToken or menuOpen then
+		task.spawn(function()
+			-- out fast, then the strip closes behind it
+			local faded = animate(CONFIG.menuStripFadeOut, 0, function()
+				return stripFade
+			end, function(value)
+				stripFade = value
+				drawStrip()
+			end)
+			if not faded then
 				return
 			end
-			local shrink = tween(strip, motionInfo(0.13), {
-				Size = UDim2.fromOffset(0, CONFIG.menuStripHeight),
-			})
-			shrink.Completed:Connect(function()
-				if token == menuToken and not menuOpen then
-					strip.Visible = false
-				end
+			local slid = animate(CONFIG.menuStripCloseTime, 0, function()
+				return stripFill
+			end, function(value)
+				stripFill = value
+				drawStrip()
 			end)
+			if not slid then
+				return
+			end
+			strip.Visible = false
 		end)
 	end
 end
+
+drawStrip()
 
 ----------------------------------------------------------------------
 -- features
@@ -1217,14 +1268,26 @@ local COMMANDS = {
 local lastCommand = nil
 local lastCommandAt = 0
 
--- returns true when the text was a command, which is also how the chat uses it
--- to tell that the message should not be shown
-local function runCommand(text)
+local function commandName(text)
 	if typeof(text) ~= "string" then
+		return nil
+	end
+	return string.match(string.lower(text), "^%s*(.-)%s*$")
+end
+
+-- does this text name a command, without running it: the chat hook uses it to
+-- decide whether the message should be swallowed
+local function isCommand(text)
+	local name = commandName(text)
+	return name ~= nil and COMMANDS[name] ~= nil
+end
+
+-- returns true when the text was a command
+local function runCommand(text)
+	local name = commandName(text)
+	if name == nil then
 		return false
 	end
-	local name = string.lower(string.gsub(text, "^%s+", ""))
-	name = string.gsub(name, "%s+$", "")
 	local entry = COMMANDS[name]
 	if not entry then
 		return false
@@ -1241,10 +1304,18 @@ local function runCommand(text)
 end
 
 local function bindCommands()
-	local okVersion, version = pcall(function()
-		return TextChatService.ChatVersion
-	end)
-	if okVersion and version == Enum.ChatVersion.TextChatService then
+	-- Chatted fires whichever chat system the game runs, so it is the path that
+	-- is always there
+	track(player.Chatted:Connect(function(text)
+		runCommand(text)
+	end))
+
+	-- this hook only hides the command from the chat log. It is optional, so its
+	-- failure is reported rather than thrown
+	local okHook = pcall(function()
+		if TextChatService.ChatVersion ~= Enum.ChatVersion.TextChatService then
+			return
+		end
 		local previousCallback = TextChatService.OnIncomingMessage
 		TextChatService.OnIncomingMessage = function(message)
 			local properties = nil
@@ -1255,19 +1326,18 @@ local function bindCommands()
 				end
 			end
 			local source = message.TextSource
-			if source and source.UserId == player.UserId and runCommand(message.Text) then
+			if source and source.UserId == player.UserId and isCommand(message.Text) then
 				properties = properties or Instance.new("TextChatMessageProperties")
 				properties.Text = ""
 				return properties
 			end
 			return properties
 		end
-		return
+	end)
+	if not okHook then
+		warn("[Kbar] commands will show in chat")
 	end
-	track(player.Chatted:Connect(runCommand))
 end
-
-bindCommands()
 
 -- the person orb opens and closes Roblox's own list
 track(orb.Activated:Connect(togglePlayerList))
@@ -1305,14 +1375,43 @@ end))
 -- clock and version
 ----------------------------------------------------------------------
 
+-- DateTime gives the player's own local time, which is what a clock in the corner
+-- should show. os.date is the fallback for executors that hide DateTime, and a
+-- raw os.time stamp is the last resort, so the label never sits on a placeholder.
+local function localClock()
+	local okDate, text = pcall(function()
+		return DateTime.now():ToLocalTime():FormatLocalTime("HH:mm", "en-us")
+	end)
+	if okDate and typeof(text) == "string" and #text == 5 then
+		return text
+	end
+	local okOs, dated = pcall(function()
+		return os.date("%H:%M")
+	end)
+	if okOs and typeof(dated) == "string" and #dated == 5 then
+		return dated
+	end
+	local okTime, stamp = pcall(function()
+		return os.time()
+	end)
+	if okTime and typeof(stamp) == "number" then
+		return string.format("%02d:%02d", math.floor(stamp / 3600) % 24, math.floor(stamp / 60) % 60)
+	end
+	return "--:--"
+end
+
 task.spawn(function()
 	while true do
-		local ok, clock = pcall(function()
-			return os.date("%H:%M")
+		clockLabel.Text = localClock()
+		local okNow, now = pcall(function()
+			return os.time()
 		end)
-		clockLabel.Text = ok and clock or "--:--"
-		local now = os.time()
-		task.wait(math.max(1, 60 - (now % 60)))
+		local untilNextMinute = 5
+		if okNow and typeof(now) == "number" then
+			untilNextMinute = 60 - (now % 60)
+		end
+		-- wake on the minute, so the number changes when the minute does
+		task.wait(math.clamp(untilNextMinute, 1, 60))
 	end
 end)
 
@@ -1325,12 +1424,19 @@ local function refreshVersion()
 		for line in string.gmatch(body, "[^\r\n]+") do
 			table.insert(lines, line)
 		end
-		tagLabel.Text = lines[1] or "Indev"
-		verLabel.Text = lines[2] or "1.0"
-	else
-		tagLabel.Text = "Indev"
-		verLabel.Text = "offline"
+		local tag = lines[1]
+		local version = lines[2]
+		if tag and #tag > 0 then
+			tagLabel.Text = tag
+		end
+		if version and #version > 0 then
+			verLabel.Text = version
+		end
+		return
 	end
+	-- no answer: show what this file says it is, not a placeholder
+	tagLabel.Text = "Indev"
+	verLabel.Text = CONFIG.versionFallback
 end
 
 task.spawn(function()
@@ -1341,11 +1447,23 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------------
+-- chat commands, bound last
+----------------------------------------------------------------------
+
+-- The chat hook is the only part of this file that depends on how the executor
+-- exposes TextChatService, so it runs after everything else and inside a pcall:
+-- a chat that refuses the callback must never take the bar down with it.
+local okChat, chatError = pcall(bindCommands)
+if not okChat then
+	warn("[Kbar] chat commands unavailable: " .. tostring(chatError))
+end
+
+----------------------------------------------------------------------
 -- public handle
 ----------------------------------------------------------------------
 
 _G.Kbar = {
-	version = "1.1",
+	version = CONFIG.versionFallback,
 	notify = notify,
 	setOpen = setOpen,
 	setMenuOpen = setMenuOpen,
