@@ -126,6 +126,19 @@ local TeleportService = game:GetService("TeleportService")
 local StarterGui = game:GetService("StarterGui")
 local TextChatService = game:GetService("TextChatService")
 
+-- game:HttpGet is an executor global; Studio and vanilla clients do not have it,
+-- so fall back to HttpService. Same call shape either way.
+local function httpGet(url)
+	local direct = game.HttpGet
+	if typeof(direct) == "function" then
+		local ok, body = pcall(direct, game, url)
+		if ok and body then
+			return body
+		end
+	end
+	return HttpService:HttpGet(url)
+end
+
 local player = Players.LocalPlayer
 if not player then
 	return
@@ -1137,7 +1150,7 @@ local function runScript(name, url)
 	notify(name, "Loading " .. name)
 	task.spawn(function()
 		local ok, err = pcall(function()
-			local source = game:HttpGet(url)
+			local source = httpGet(url)
 			local chunk = loadstring(source)
 			if not chunk then
 				error("loadstring returned nothing")
@@ -1157,7 +1170,7 @@ local function serverHop()
 	task.spawn(function()
 		local ok, err = pcall(function()
 			local servers = {}
-			local raw = game:HttpGet(
+			local raw = httpGet(
 				"https://games.roblox.com/v1/games/"
 					.. tostring(game.PlaceId)
 					.. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
@@ -1425,7 +1438,7 @@ end)
 
 local function refreshVersion()
 	local ok, body = pcall(function()
-		return game:HttpGet(CONFIG.verUrl)
+		return httpGet(CONFIG.verUrl)
 	end)
 	if ok and typeof(body) == "string" and #body > 0 then
 		local tag, version
