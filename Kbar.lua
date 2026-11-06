@@ -1,14 +1,16 @@
 --!nonstrict
 --[[
-	Kbar 1.2 — a client-side notch bar for Roblox.
+	Kbar 1.3 — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.2        tag and version come from Ver.txt
+		Indev | 12:00 | 1.3        tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
+	The row above is placed from its own measurements, so it is centred on the
+	notch at any width, and the notch closes to it rather than to a fixed number.
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb (Roblox's own player list), the health bar and its
@@ -16,6 +18,12 @@
 	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Notify.
 	It slides out empty, fades its labels in only once it is fully open, and on the
 	way back it fades them out fast before the strip itself closes.
+	The notch's own tray fades the same way, in behind the opening and out fast
+	before it closes.
+
+	When Ver.txt holds a number newer than this file, a prompt asks whether to
+	update. Update drops this copy and runs the file at updateUrl; Deny keeps this
+	copy for the rest of the game and the prompt never returns.
 
 	Chat commands, prefix k-: k-hop, k-alog, k-lssrsw, k-fc, k-iy, k-anim, k-hub.
 	Type one in the chat box and it runs.
@@ -31,11 +39,14 @@ local CONFIG = {
 	startOpen = false,
 
 	notchWidth = 384,
-	notchWidthClosed = 232,
+	-- the closed notch only has to hold the info row, so it is measured off that
+	-- row: this is the ceiling it is allowed to grow back to
+	notchWidthClosed = 188,
 	notchRadius = 12,
-	infoRowHeight = 22,
+	infoRowHeight = 24,
+	infoGap = 12,
 	trayHeight = 94,
-	chevronHeight = 10,
+	chevronHeight = 14,
 	chevronArrowInset = 8,
 
 	cellWidth = 76,
@@ -58,15 +69,22 @@ local CONFIG = {
 	menuStripKey = 34,
 	menuStripButton = 62,
 	menuStripButtonHeight = 34,
-	menuStripGap = 4,
-	menuStripPadding = 4,
+	menuStripGap = 8,
+	menuStripPadding = 6,
 	menuStripOpenTime = 0.2,
 	menuStripFadeIn = 0.14,
 	menuStripFadeOut = 0.07,
 	menuStripCloseTime = 0.12,
 
+	-- what this file is. Ver.txt is compared against it, and a newer number
+	-- there is what puts the update prompt on screen
+	runningVersion = "1.3",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.2",
+	versionFallback = "1.3",
+	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
+	-- the tray fades like the K strip does, so nothing pops in at the end
+	trayFadeIn = 0.16,
+	trayFadeOut = 0.07,
 
 	font = Enum.Font.Code,
 	-- Code has no bold cut, and its capital A comes up shorter than the other caps,
@@ -440,52 +458,41 @@ local infoRow = make("Frame", {
 	Size = UDim2.new(1, 0, 0, CONFIG.infoRowHeight),
 }, bar)
 
-local cells = make("Frame", {
-	Name = "Cells",
-	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.new(0.5, 0, 0.5, 0),
-	-- automatic width, so the frame is exactly as wide as the three groups and
-	-- centring it centres them: nothing is left to a layout's own idea of centre
-	Size = UDim2.new(0, 0, 1, 0),
-	AutomaticSize = Enum.AutomaticSize.X,
-}, infoRow)
-
-make("UIListLayout", {
-	FillDirection = Enum.FillDirection.Horizontal,
-	HorizontalAlignment = Enum.HorizontalAlignment.Center,
-	VerticalAlignment = Enum.VerticalAlignment.Center,
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	Padding = UDim.new(0, 16),
-}, cells)
-
-local function cellSeparator(order)
+-- The row is placed by hand from its measured parts. A UIListLayout with
+-- HorizontalAlignment.Center inside an auto-sized frame feeds its own centring
+-- offset back into that frame's width, so the frame settles wider than the text
+-- and the text ends up left of middle. Measuring each part and stepping out from
+-- the middle cannot drift that way, whatever the text says.
+local function infoSeparator()
 	return make("Frame", {
 		Name = "Separator",
 		BackgroundColor3 = CONFIG.colour.text,
 		BackgroundTransparency = 0.84,
 		BorderSizePixel = 0,
-		Size = UDim2.fromOffset(1, 14),
-		LayoutOrder = order,
-	}, cells)
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		Size = UDim2.fromOffset(1, 12),
+	}, infoRow)
 end
 
-local tagLabel = label(cells, {
+local tagLabel = label(infoRow, {
 	Name = "Tag",
 	Text = "Indev",
-	LayoutOrder = 1,
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 0, 0.5, 0),
 	AutomaticSize = Enum.AutomaticSize.X,
 	Size = UDim2.fromOffset(0, 14),
 })
 make("UISizeConstraint", { MaxSize = Vector2.new(88, 14) }, tagLabel)
 
-cellSeparator(2)
+local tagSeparator = infoSeparator()
 
-local clockLabel = label(cells, {
+local clockLabel = label(infoRow, {
 	Name = "Clock",
 	Text = "00:00",
 	TextSize = CONFIG.textSize + 1,
-	LayoutOrder = 3,
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 0, 0.5, 0),
 	AutomaticSize = Enum.AutomaticSize.X,
 	Size = UDim2.fromOffset(0, 16),
 })
@@ -496,17 +503,56 @@ make("UIStroke", {
 	ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
 }, clockLabel)
 
-cellSeparator(4)
+local clockSeparator = infoSeparator()
 
-local verLabel = label(cells, {
+local verLabel = label(infoRow, {
 	Name = "Ver",
 	Text = CONFIG.versionFallback,
 	TextColor3 = CONFIG.colour.dim,
-	LayoutOrder = 5,
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 0, 0.5, 0),
 	AutomaticSize = Enum.AutomaticSize.X,
 	Size = UDim2.fromOffset(0, 14),
 })
 make("UISizeConstraint", { MaxSize = Vector2.new(88, 14) }, verLabel)
+
+local infoParts = { tagLabel, tagSeparator, clockLabel, clockSeparator, verLabel }
+
+-- width of the whole info row once laid out, which is also what decides how
+-- narrow the notch may close to
+local infoWidth = 0
+
+-- set once the notch and its widths exist, further down: laying the row out again
+-- is what keeps a shut notch sized to the text it now holds
+local relayoutNotch
+
+local function layoutInfo()
+	local total = 0
+	for index, part in ipairs(infoParts) do
+		total += part.AbsoluteSize.X
+		if index < #infoParts then
+			total += CONFIG.infoGap
+		end
+	end
+	infoWidth = total
+	local x = (infoRow.AbsoluteSize.X - total) / 2
+	for index, part in ipairs(infoParts) do
+		part.Position = UDim2.new(0, x, 0.5, 0)
+		x += part.AbsoluteSize.X
+		if index < #infoParts then
+			x += CONFIG.infoGap
+		end
+	end
+	if relayoutNotch then
+		relayoutNotch()
+	end
+end
+
+layoutInfo()
+track(infoRow:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutInfo))
+for _, part in ipairs(infoParts) do
+	track(part:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutInfo))
+end
 
 -- the tray, four across
 local tray = make("Frame", {
@@ -541,6 +587,12 @@ local function press(buttonId)
 	return false
 end
 
+-- every tray button paints from one number, so the tray fades as a whole the way
+-- the K strip does, instead of popping in on the last frame of the size tween
+local trayItems = {}
+local trayFade = CONFIG.startOpen and 1 or 0
+local paintTray
+
 for index, entry in ipairs(TRAY) do
 	local button = make("TextButton", {
 		Name = entry.id,
@@ -548,26 +600,30 @@ for index, entry in ipairs(TRAY) do
 		Font = CONFIG.font,
 		TextSize = CONFIG.buttonTextSize,
 		TextColor3 = Color3.fromRGB(215, 220, 226),
+		TextTransparency = 1,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextYAlignment = Enum.TextYAlignment.Center,
 		BackgroundColor3 = CONFIG.colour.buttonFill,
-		BackgroundTransparency = 0.96,
+		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		LayoutOrder = index,
 		ZIndex = 4,
 	}, tray)
 	corner(button, 8)
-	local buttonStroke = stroke(button, CONFIG.colour.buttonFill, CONFIG.strokeThickness, 0.82)
+	local buttonStroke = stroke(button, CONFIG.colour.buttonFill, CONFIG.strokeThickness, 1)
+
+	local item = { button = button, stroke = buttonStroke, hovered = false }
+	table.insert(trayItems, item)
 
 	track(button.MouseEnter:Connect(function()
-		tween(button, motionInfo(0.1), { BackgroundTransparency = 0.9 })
-		tween(buttonStroke, motionInfo(0.1), { Transparency = 0.66 })
+		item.hovered = true
+		paintTray()
 	end))
 	track(button.MouseLeave:Connect(function()
-		tween(button, motionInfo(0.1), { BackgroundTransparency = 0.96 })
-		tween(buttonStroke, motionInfo(0.1), { Transparency = 0.82 })
+		item.hovered = false
+		paintTray()
 	end))
 	track(button.Activated:Connect(function()
 		tween(buttonStroke, motionInfo(0.12), {
@@ -576,15 +632,58 @@ for index, entry in ipairs(TRAY) do
 		})
 		task.delay(0.28, function()
 			if button.Parent then
-				tween(buttonStroke, motionInfo(0.2), {
-					Color = CONFIG.colour.buttonFill,
-					Transparency = 0.82,
-				})
+				buttonStroke.Color = CONFIG.colour.buttonFill
+				paintTray()
 			end
 		end)
 		press(entry.id)
 	end))
 end
+
+-- how solid a tray button is at full fade: the faint fill and border it has
+-- always drawn, and the brighter pair it takes under the pointer
+local TRAY_FILL = 0.04
+local TRAY_HOVER_FILL = 0.1
+local TRAY_STROKE = 0.18
+local TRAY_HOVER_STROKE = 0.34
+
+local trayToken = 0
+
+paintTray = function()
+	for _, item in ipairs(trayItems) do
+		local fill = item.hovered and TRAY_HOVER_FILL or TRAY_FILL
+		local edge = item.hovered and TRAY_HOVER_STROKE or TRAY_STROKE
+		item.button.TextTransparency = 1 - trayFade
+		item.button.BackgroundTransparency = 1 - fill * trayFade
+		item.stroke.Transparency = 1 - edge * trayFade
+	end
+end
+
+-- walks the tray's fade to a goal, a frame at a time. A newer open or close takes
+-- over by bumping the token, so an interrupted fade never fights the next one.
+local function fadeTray(goal, duration)
+	trayToken += 1
+	local token = trayToken
+	local from = trayFade
+	local start = os.clock()
+	local span = motionInfo(duration).Time
+	task.spawn(function()
+		while true do
+			if token ~= trayToken then
+				return
+			end
+			local alpha = span > 0 and math.min((os.clock() - start) / span, 1) or 1
+			trayFade = from + (goal - from) * alpha
+			paintTray()
+			if alpha >= 1 then
+				return
+			end
+			task.wait()
+		end
+	end)
+end
+
+paintTray()
 
 -- the chevron is a full-width strip along the bottom of the notch, so the arrow can
 -- sit at the right edge with the info row's text staying centred above it
@@ -603,19 +702,19 @@ local chevronPlate = make("Frame", {
 	Name = "Plate",
 	AnchorPoint = Vector2.new(1, 0.5),
 	Position = UDim2.new(1, -8, 0.5, 0),
-	Size = UDim2.fromOffset(40, CONFIG.chevronHeight),
+	Size = UDim2.fromOffset(34, CONFIG.chevronHeight),
 	BackgroundColor3 = CONFIG.colour.buttonFill,
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ZIndex = 5,
 }, chevron)
-corner(chevronPlate, 8)
+corner(chevronPlate, 7)
 
 local arrow = make("Frame", {
 	Name = "Arrow",
 	AnchorPoint = Vector2.new(1, 0.5),
 	Position = UDim2.new(1, -CONFIG.chevronArrowInset, 0.5, 0),
-	Size = UDim2.fromOffset(11, 7),
+	Size = UDim2.fromOffset(13, 8),
 	BackgroundTransparency = 1,
 	ZIndex = 6,
 }, chevron)
@@ -626,7 +725,7 @@ local function arrowLeg(xFraction, degrees)
 		Name = "Leg",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(xFraction, 0, 1, 0),
-		Size = UDim2.fromOffset(2, 8),
+		Size = UDim2.fromOffset(2, 9),
 		Rotation = degrees,
 		BackgroundColor3 = CONFIG.colour.dim,
 		BorderSizePixel = 0,
@@ -636,17 +735,38 @@ local function arrowLeg(xFraction, degrees)
 	table.insert(arrowLegs, leg)
 	return leg
 end
-arrowLeg(0.28, 38)
-arrowLeg(0.72, -38)
+arrowLeg(0.28, 40)
+arrowLeg(0.72, -40)
 
 local trayOpen = CONFIG.startOpen
 
+-- the notch closes to the width of its own info row plus a margin, and never past
+-- the ceiling in CONFIG: the text is never clipped and never leaves a wide gap
+local function closedWidth()
+	return math.max(CONFIG.notchWidthClosed, infoWidth + 32)
+end
+
+-- the width the notch is settled at or travelling to. Laying the row out again
+-- compares against this, so a pass mid-tween cannot snap the notch to its target.
+local lastClosedWidth = -1
+
 local function setOpen(open)
 	trayOpen = open
-	tray.Visible = true
+	local targetWidth = open and CONFIG.notchWidth or closedWidth()
+	if not open then
+		lastClosedWidth = targetWidth
+	end
+	-- the tray fades as it measures, so nothing appears on the last frame of the
+	-- size change: out fast on the way shut, in behind the opening
+	if open then
+		tray.Visible = true
+		fadeTray(1, CONFIG.trayFadeIn)
+	else
+		fadeTray(0, CONFIG.trayFadeOut)
+	end
 	tween(cluster, motionInfo(0.2), {
 		Size = UDim2.fromOffset(
-			open and CONFIG.notchWidth or CONFIG.notchWidthClosed,
+			targetWidth,
 			(open and openHeight or closedHeight) + CONFIG.notchRadius
 		),
 	})
@@ -667,6 +787,21 @@ local function setOpen(open)
 			end
 		end)
 	end
+end
+
+-- a shut notch stays exactly as wide as the text it is showing: the version can
+-- come back longer than the one this file shipped with, and the tag is whatever
+-- Ver.txt says. Guarded so setting the same width twice cannot bounce.
+relayoutNotch = function()
+	if trayOpen then
+		return
+	end
+	local width = closedWidth()
+	if width == lastClosedWidth then
+		return
+	end
+	lastClosedWidth = width
+	cluster.Size = UDim2.fromOffset(width, closedHeight + CONFIG.notchRadius)
 end
 
 setOpen(CONFIG.startOpen)
@@ -1487,6 +1622,153 @@ task.spawn(function()
 	end
 end)
 
+----------------------------------------------------------------------
+-- update prompt
+----------------------------------------------------------------------
+
+-- A number in Ver.txt newer than the one this file carries is the only thing that
+-- puts this on screen. Deny silences it for the rest of this session; Update drops
+-- this copy and runs the file at CONFIG.updateUrl in its place.
+local updateShown = false
+local updateDenied = false
+
+local function versionParts(text)
+	local parts = {}
+	for piece in string.gmatch(text or "", "%d+") do
+		table.insert(parts, tonumber(piece) or 0)
+	end
+	return parts
+end
+
+local function isNewer(latest, running)
+	local a = versionParts(latest)
+	local b = versionParts(running)
+	if #a == 0 then
+		return false
+	end
+	for index = 1, math.max(#a, #b) do
+		local x = a[index] or 0
+		local y = b[index] or 0
+		if x > y then
+			return true
+		elseif x < y then
+			return false
+		end
+	end
+	return false
+end
+
+local function applyUpdate()
+	-- drop this copy first, so the rerun never stacks a second bar on this one
+	if _G.Kbar and typeof(_G.Kbar.destroy) == "function" then
+		pcall(_G.Kbar.destroy)
+	end
+	task.wait(0.1)
+	local ok, err = pcall(function()
+		local source = httpGet(CONFIG.updateUrl)
+		if typeof(loadstring) == "function" then
+			local chunk = loadstring(source)
+			if not chunk then
+				error("loadstring returned nothing")
+			end
+			chunk()
+			return
+		end
+		-- Studio has no loadstring: run the new file as a LocalScript instead
+		local holder = Instance.new("LocalScript")
+		holder.Name = "KbarUpdate"
+		holder.Source = source
+		holder.Parent = playerGui
+	end)
+	if not ok then
+		warn("[Kbar] update failed: " .. tostring(err))
+	end
+end
+
+local function showUpdatePrompt(latest)
+	if updateShown or updateDenied then
+		return
+	end
+	updateShown = true
+
+	local overlay = make("Frame", {
+		Name = "UpdatePrompt",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		ZIndex = 40,
+	}, gui)
+	-- swallow clicks on the shade, so nothing behind the panel can be pressed
+	overlay.Active = true
+
+	local panel = panelled(make("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(320, 130),
+		BackgroundColor3 = CONFIG.colour.background,
+		ZIndex = 41,
+	}), 0)
+	corner(panel, 10)
+	stroke(panel, CONFIG.colour.edge, CONFIG.strokeThickness, 0.2)
+	panel.Parent = overlay
+
+	label(panel, {
+		Name = "Title",
+		Text = "Update available: " .. tostring(latest),
+		Position = UDim2.fromOffset(0, 13),
+		Size = UDim2.new(1, 0, 0, 16),
+		TextSize = CONFIG.textSize,
+		ZIndex = 42,
+	})
+
+	label(panel, {
+		Name = "Body",
+		Text = "An update is available, do you want to update now?",
+		Position = UDim2.fromOffset(20, 36),
+		Size = UDim2.new(1, -40, 0, 32),
+		TextSize = CONFIG.buttonTextSize,
+		TextColor3 = CONFIG.colour.dim,
+		TextWrapped = true,
+		ZIndex = 42,
+	})
+
+	local function promptButton(name, text, fill, textColour, offsetX)
+		local button = make("TextButton", {
+			Name = name,
+			Text = text,
+			Font = CONFIG.font,
+			TextSize = CONFIG.buttonTextSize,
+			TextColor3 = textColour,
+			AutoButtonColor = false,
+			BackgroundColor3 = fill,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, offsetX, 0, 80),
+			Size = UDim2.fromOffset(124, 32),
+			ZIndex = 42,
+		}, panel)
+		corner(button, 7)
+		stroke(button, CONFIG.colour.edge, 2, 0.45)
+		return button
+	end
+
+	local updateButton = promptButton("Update", "Update", CONFIG.colour.buttonFill, CONFIG.colour.background, -66)
+	local denyButton = promptButton("Deny", "Deny", CONFIG.colour.red, CONFIG.colour.text, 66)
+
+	track(updateButton.Activated:Connect(function()
+		overlay:Destroy()
+		task.spawn(applyUpdate)
+	end))
+
+	track(denyButton.Activated:Connect(function()
+		-- denied: gone for the rest of this game, and not asked again this session
+		updateDenied = true
+		overlay:Destroy()
+	end))
+end
+
 local function refreshVersion()
 	local ok, body = pcall(function()
 		return httpGet(CONFIG.verUrl)
@@ -1512,6 +1794,10 @@ local function refreshVersion()
 			tagLabel.Text = tag
 		end
 		verLabel.Text = version or CONFIG.versionFallback
+		if version and isNewer(version, CONFIG.runningVersion) then
+			-- the file is ahead of this copy: offer the swap, once
+			task.spawn(showUpdatePrompt, version)
+		end
 		return
 	end
 	-- no answer: show what this file says it is, not a placeholder
@@ -1543,7 +1829,7 @@ end
 ----------------------------------------------------------------------
 
 _G.Kbar = {
-	version = CONFIG.versionFallback,
+	version = CONFIG.runningVersion,
 	notify = notify,
 	setOpen = setOpen,
 	setMenuOpen = setMenuOpen,
