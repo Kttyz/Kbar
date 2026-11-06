@@ -1,11 +1,11 @@
 --!nonstrict
 --[[
-	Kbar 1.1 — a client-side notch bar for Roblox.
+	Kbar 1.2 — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.1        tag and version come from Ver.txt
+		Indev | 12:00 | 1.2        tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
@@ -66,9 +66,13 @@ local CONFIG = {
 	menuStripCloseTime = 0.12,
 
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.1",
+	versionFallback = "1.2",
 
 	font = Enum.Font.Code,
+	-- Code has no bold cut, and its capital A comes up shorter than the other caps,
+	-- so every label gets this face instead: bold, monospaced, even cap heights.
+	fontFamily = "rbxasset://fonts/families/RobotoMono.json",
+	fontWeight = Enum.FontWeight.Bold,
 	textSize = 14,
 	smallTextSize = 10,
 	buttonTextSize = 12,
@@ -182,10 +186,31 @@ local function applyTransparency()
 	end
 end
 
+-- the bold face, resolved once. Font.new is the modern way to ask for a weight;
+-- where it is missing the labels keep CONFIG.font and still work.
+local BOLD_FACE
+pcall(function()
+	if typeof(Font) == "table" and Font.new then
+		BOLD_FACE = Font.new(CONFIG.fontFamily, CONFIG.fontWeight)
+	end
+end)
+
+local TEXT_CLASSES = { TextLabel = true, TextButton = true, TextBox = true }
+
 local function make(class, properties, parent)
 	local instance = Instance.new(class)
 	for key, value in pairs(properties) do
 		instance[key] = value
+	end
+	-- every label in this script is built here, so this is the one place that has to
+	-- know about the face: nothing can be drawn and miss it.
+	if BOLD_FACE and TEXT_CLASSES[class] then
+		local ok = pcall(function()
+			instance.FontFace = BOLD_FACE
+		end)
+		if not ok then
+			BOLD_FACE = nil
+		end
 	end
 	if parent then
 		instance.Parent = parent
@@ -418,9 +443,12 @@ local infoRow = make("Frame", {
 local cells = make("Frame", {
 	Name = "Cells",
 	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 0),
-	Size = UDim2.new(1, -24, 1, 0),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 0),
+	-- automatic width, so the frame is exactly as wide as the three groups and
+	-- centring it centres them: nothing is left to a layout's own idea of centre
+	Size = UDim2.new(0, 0, 1, 0),
+	AutomaticSize = Enum.AutomaticSize.X,
 }, infoRow)
 
 make("UIListLayout", {
@@ -428,7 +456,7 @@ make("UIListLayout", {
 	HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	VerticalAlignment = Enum.VerticalAlignment.Center,
 	SortOrder = Enum.SortOrder.LayoutOrder,
-	Padding = UDim.new(0, 10),
+	Padding = UDim.new(0, 16),
 }, cells)
 
 local function cellSeparator(order)
@@ -625,7 +653,8 @@ local function setOpen(open)
 	tween(chevron, motionInfo(0.2), {
 		Position = UDim2.new(0, 0, 0, open and (CONFIG.infoRowHeight + CONFIG.trayHeight) or CONFIG.infoRowHeight),
 	})
-	tween(arrow, motionInfo(0.2), { Rotation = open and 180 or 0 })
+	-- closed the arrow points down, into the tray; open it flips up, back to the bar
+	tween(arrow, motionInfo(0.2), { Rotation = open and 0 or 180 })
 	for _, leg in ipairs(arrowLegs) do
 		tween(leg, motionInfo(0.2), {
 			BackgroundColor3 = open and CONFIG.colour.text or CONFIG.colour.dim,
@@ -656,7 +685,9 @@ end))
 -- the fps and ping readouts, flanking the notch
 ----------------------------------------------------------------------
 
-local SIDE_BOX_HEIGHT = CONFIG.infoRowHeight + CONFIG.notchRadius
+-- the FPS and Ping boxes are exactly as tall as the closed bar, so their bottom
+-- edge lines up with the notch instead of stopping short of it
+local SIDE_BOX_HEIGHT = CONFIG.infoRowHeight + CONFIG.chevronHeight + CONFIG.notchRadius
 local SIDE_TITLE_TOP = CONFIG.notchRadius + 2
 local SIDE_TITLE_HEIGHT = 10
 local SIDE_VALUE_TOP = SIDE_TITLE_TOP + SIDE_TITLE_HEIGHT + 1
@@ -868,8 +899,8 @@ end))
 -- the K strip
 ----------------------------------------------------------------------
 
--- the strip grows out of the left of the K button, so its buttons slide out
--- from under the key rather than a panel dropping onto the screen
+-- the strip grows out of the left of the K button, so its buttons are uncovered
+-- in place rather than a panel dropping onto the screen
 local STRIP = {
 	{ id = "alog", text = "ALOG" },
 	{ id = "hop", text = "SHOP" },
@@ -880,6 +911,18 @@ local STRIP = {
 -- closed, the pill is the K alone; open, it is the K plus every button
 local stripClosedWidth = CONFIG.menuStripPadding * 2 + CONFIG.menuStripKey
 local stripOpenWidth = stripClosedWidth + #STRIP * (CONFIG.menuStripButton + CONFIG.menuStripGap)
+
+-- where a button sits, measured from the pill's right edge at the open width. That
+-- number never changes: the right edge is pinned, so growing the pill leftward
+-- uncovers the buttons where they already are. A list layout would re-place all
+-- four of them every frame the width moved, which is the squirming this removes.
+local function buttonOffsetFromRight(index)
+	local offset = CONFIG.menuStripPadding
+	for _ = index + 1, #STRIP do
+		offset += CONFIG.menuStripButton + CONFIG.menuStripGap
+	end
+	return offset
+end
 
 local menuOpen = false
 local menuToken = 0
@@ -907,20 +950,8 @@ corner(strip, 10)
 local stripStroke = stroke(strip, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
 strip.Parent = gui
 
-make("UIPadding", {
-	PaddingLeft = UDim.new(0, CONFIG.menuStripPadding),
-	PaddingRight = UDim.new(0, CONFIG.menuStripPadding),
-}, strip)
-
-make("UIListLayout", {
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	FillDirection = Enum.FillDirection.Horizontal,
-	Padding = UDim.new(0, CONFIG.menuStripGap),
-	-- left, so the K holds the left end and the buttons run to the right edge
-	HorizontalAlignment = Enum.HorizontalAlignment.Left,
-	VerticalAlignment = Enum.VerticalAlignment.Center,
-}, strip)
-
+-- nothing here uses a layout or padding: both would re-place every button each
+-- frame the width moved, and the whole point is that the buttons stand still
 local keyButton = make("TextButton", {
 	Name = "MenuKey",
 	Text = "K",
@@ -931,6 +962,9 @@ local keyButton = make("TextButton", {
 	BackgroundColor3 = CONFIG.colour.buttonFill,
 	BackgroundTransparency = 0.94,
 	BorderSizePixel = 0,
+	-- pinned to the left edge, so the K rides out with the pill and back
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, CONFIG.menuStripPadding, 0.5, 0),
 	Size = UDim2.fromOffset(CONFIG.menuStripKey, CONFIG.menuStripKey),
 	LayoutOrder = 0,
 	ZIndex = 9,
@@ -989,6 +1023,10 @@ for index, entry in ipairs(STRIP) do
 		BackgroundColor3 = CONFIG.colour.panelTop,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		-- pinned to the right edge at the offset it holds when the pill is fully
+		-- open: the growing pill uncovers it there, it never slides or squashes
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -buttonOffsetFromRight(index), 0.5, 0),
 		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripButtonHeight),
 		LayoutOrder = index + 1,
 		ZIndex = 9,
@@ -1029,46 +1067,38 @@ setMenuOpen = function(open)
 		Transparency = open and 0.15 or 0.35,
 	})
 
+	local function runFill(duration, goal)
+		return animate(duration, goal, function()
+			return stripFill
+		end, function(value)
+			stripFill = value
+			drawStrip()
+		end)
+	end
+
+	local function runFade(duration, goal)
+		return animate(duration, goal, function()
+			return stripFade
+		end, function(value)
+			stripFade = value
+			drawStrip()
+		end)
+	end
+
 	if open then
 		task.spawn(function()
-			-- slide out empty first, then fade the labels in once it is fully open
-			local slid = animate(CONFIG.menuStripOpenTime, 1, function()
-				return stripFill
-			end, function(value)
-				stripFill = value
-				drawStrip()
-			end)
-			if not slid then
-				return
-			end
-			animate(CONFIG.menuStripFadeIn, 1, function()
-				return stripFade
-			end, function(value)
-				stripFade = value
-				drawStrip()
-			end)
+			-- one gesture: the pill opens and its labels fade in together. The buttons
+			-- hold their position the whole time, so there is nothing to watch move.
+			task.spawn(runFill, CONFIG.menuStripOpenTime, 1)
+			runFade(CONFIG.menuStripFadeIn, 1)
 		end)
 	else
 		task.spawn(function()
-			-- out fast, then the strip closes behind it
-			local faded = animate(CONFIG.menuStripFadeOut, 0, function()
-				return stripFade
-			end, function(value)
-				stripFade = value
-				drawStrip()
-			end)
-			if not faded then
+			-- out fast, then the pill closes behind it
+			if not runFade(CONFIG.menuStripFadeOut, 0) then
 				return
 			end
-			local slid = animate(CONFIG.menuStripCloseTime, 0, function()
-				return stripFill
-			end, function(value)
-				stripFill = value
-				drawStrip()
-			end)
-			if not slid then
-				return
-			end
+			runFill(CONFIG.menuStripCloseTime, 0)
 		end)
 	end
 end
