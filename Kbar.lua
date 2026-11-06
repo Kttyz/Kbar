@@ -1028,6 +1028,9 @@ for index, entry in ipairs(STRIP) do
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -buttonOffsetFromRight(index), 0.5, 0),
 		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripButtonHeight),
+		-- hidden while the pill is shut: the rightmost button's box reaches into
+		-- the closed pill and would eat clicks meant for the K
+		Visible = false,
 		LayoutOrder = index + 1,
 		ZIndex = 9,
 	}, strip)
@@ -1085,7 +1088,15 @@ setMenuOpen = function(open)
 		end)
 	end
 
+	-- the buttons only take clicks while the pill is out
+	local function setStripHit(enabled)
+		for _, item in ipairs(stripItems) do
+			item.button.Visible = enabled
+		end
+	end
+
 	if open then
+		setStripHit(true)
 		task.spawn(function()
 			-- one gesture: the pill opens and its labels fade in together. The buttons
 			-- hold their position the whole time, so there is nothing to watch move.
@@ -1098,7 +1109,9 @@ setMenuOpen = function(open)
 			if not runFade(CONFIG.menuStripFadeOut, 0) then
 				return
 			end
-			runFill(CONFIG.menuStripCloseTime, 0)
+			if runFill(CONFIG.menuStripCloseTime, 0) then
+				setStripHit(false)
+			end
 		end)
 	end
 end
