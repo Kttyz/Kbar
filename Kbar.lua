@@ -1,16 +1,17 @@
 --!nonstrict
 --[[
-	Kbar 1.3b — a client-side notch bar for Roblox.
+	Kbar 1.3c — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.3b       tag and version come from Ver.txt
+		Indev | 12:00 | 1.3c       tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
-	The row above is one centred line of rich text, so Roblox centres it itself at
-	any width, and the notch closes around it rather than to a fixed number.
+	The row above is three labels in a row that hugs its own width and is centred by
+	its anchor, so Roblox centres the group itself at any width, and the notch closes
+	around it rather than to a fixed number.
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb (Roblox's own player list), the health bar and its
@@ -77,9 +78,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.3b",
+	runningVersion = "1.3c",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.3b",
+	versionFallback = "1.3c",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -92,7 +93,19 @@ local CONFIG = {
 	fontWeight = Enum.FontWeight.Bold,
 	textSize = 14,
 	smallTextSize = 10,
-	buttonTextSize = 12,
+	-- the tray's two-line labels and the strip's labels, a step up from 12
+	buttonTextSize = 13,
+	-- the info row's three pieces are separate labels now, so each keeps its own
+	-- size: the clock reads a little larger than the tag, the version a little smaller
+	clockTextSize = 15,
+	versionTextSize = 12,
+	separatorTextSize = 11,
+	-- the gap between those pieces, and the margin the shut notch keeps each side
+	infoGap = 7,
+	infoPad = 16,
+	-- the mini bar: the K itself and the four labels beside it
+	keyTextSize = 20,
+	stripTextSize = 14,
 	strokeThickness = 2,
 
 	meowSound = "rbxassetid://134881862056957", -- KHub's startup sound
@@ -457,71 +470,75 @@ local infoRow = make("Frame", {
 	Size = UDim2.new(1, 0, 0, CONFIG.infoRowHeight),
 }, bar)
 
--- The line is one rich-text label that fills the row, so Roblox centres it itself:
--- TextXAlignment.Center centres the rendered line inside the label, the label fills
--- the row, the row fills the notch, and the notch is cut from TextBounds plus equal
--- padding on both sides. The width Roblox centres and the width the notch is built
--- from are the same number, so they cannot drift apart: not at any width, not open or
--- shut, and there is no pixel offset or measured glyph anywhere in this.
-local SEPARATOR_COLOUR = "#2E2F31"
-
-local function hexOf(colour)
-	local ok, hex = pcall(function()
-		return colour:ToHex()
-	end)
-	if ok and typeof(hex) == "string" and #hex == 6 then
-		return "#" .. hex
-	end
-	return "#ECEEF1"
-end
-
-local function escaped(text)
-	return (string.gsub(tostring(text), "[&<>]", { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;" }))
-end
-
-local infoLabel = label(infoRow, {
+-- The line is a row that hugs its own content: one label per piece, no padding, a
+-- left-aligned list layout inside a frame sized to what it holds. That frame's anchor
+-- is 0.5, so Roblox centres it by its own bounding box: the margin each side of the
+-- text is the same number because nothing adds to either side, and the shut notch is
+-- cut from that same box plus equal padding. No pixel offset, no measured glyph, and
+-- no layout feeding a centring offset back into the width it is centring.
+local infoRowGroup = make("Frame", {
 	Name = "Line",
-	Text = "",
-	RichText = true,
-	TextSize = CONFIG.textSize,
-	TextXAlignment = Enum.TextXAlignment.Center,
-	TextYAlignment = Enum.TextYAlignment.Center,
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromScale(1, 1),
-})
+	Size = UDim2.new(0, 0, 1, 0),
+	AutomaticSize = Enum.AutomaticSize.X,
+	BackgroundTransparency = 1,
+}, infoRow)
 
--- what the line says. The three pieces are composed into one string, so they share
--- one baseline and one centring decision instead of three separate ones.
+make("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	HorizontalAlignment = Enum.HorizontalAlignment.Left,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+	Padding = UDim.new(0, CONFIG.infoGap),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, infoRowGroup)
+
+local function infoPiece(name, text, textSize, colour, order)
+	return label(infoRowGroup, {
+		Name = name,
+		Text = text,
+		TextSize = textSize,
+		TextColor3 = colour,
+		Size = UDim2.fromOffset(0, 0),
+		AutomaticSize = Enum.AutomaticSize.XY,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		LayoutOrder = order,
+	})
+end
+
+-- what the line says
 local infoText = {
 	tag = "Indev",
 	clock = "00:00",
 	version = CONFIG.versionFallback,
 }
 
+local separatorColour = Color3.fromRGB(46, 47, 49)
+
+local tagLabel = infoPiece("Tag", infoText.tag, CONFIG.textSize, CONFIG.colour.text, 1)
+infoPiece("Separator1", "|", CONFIG.separatorTextSize, separatorColour, 2)
+local clockLabel = infoPiece("Clock", infoText.clock, CONFIG.clockTextSize, CONFIG.colour.dim, 3)
+-- the soft glow the old rich-text clock had, kept on its own label
+stroke(clockLabel, CONFIG.colour.dim, 0.4, 0.55)
+infoPiece("Separator2", "|", CONFIG.separatorTextSize, separatorColour, 4)
+local versionLabel = infoPiece("Version", infoText.version, CONFIG.versionTextSize, CONFIG.colour.dim, 5)
+
 local function composeInfo()
-	infoLabel.Text = table.concat({
-		'<font color="' .. hexOf(CONFIG.colour.text) .. '">' .. escaped(infoText.tag) .. "</font>",
-		'<font color="' .. SEPARATOR_COLOUR .. '"> | </font>',
-		'<stroke color="' .. hexOf(CONFIG.colour.dim) .. '" thickness="0.4" transparency="0.55">'
-			.. escaped(infoText.clock)
-			.. "</stroke>",
-		'<font color="' .. SEPARATOR_COLOUR .. '"> | </font>',
-		'<font color="' .. hexOf(CONFIG.colour.dim) .. '">' .. escaped(infoText.version) .. "</font>",
-	})
+	tagLabel.Text = infoText.tag
+	clockLabel.Text = infoText.clock
+	versionLabel.Text = infoText.version
 end
 
 composeInfo()
 
--- the width of the line Roblox actually renders. TextBounds is the same measurement
--- the text renderer uses to centre that line, so padding it equally on both sides is
--- centring by construction, not by arithmetic that can drift.
+-- the row's own width, measured by Roblox from the labels it holds
 local function infoWidthNow()
-	local ok, bounds = pcall(function()
-		return infoLabel.TextBounds
+	local ok, size = pcall(function()
+		return infoRowGroup.AbsoluteSize.X
 	end)
-	if ok and typeof(bounds) == "Vector2" then
-		return bounds.X
+	if ok and typeof(size) == "number" and size == size then
+		return size
 	end
 	return 0
 end
@@ -530,7 +547,7 @@ end
 -- re-cuts a shut notch around the text it now holds
 local relayoutNotch
 
-track(infoLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+track(infoRowGroup:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 	if relayoutNotch then
 		relayoutNotch()
 	end
@@ -725,7 +742,7 @@ local trayOpen = CONFIG.startOpen
 -- the notch closes to the width of its own info row plus a margin, and never past
 -- the ceiling in CONFIG: the text is never clipped and never leaves a wide gap
 local function closedWidth()
-	return math.max(CONFIG.notchWidthClosed, infoWidthNow() + 32)
+	return math.max(CONFIG.notchWidthClosed, infoWidthNow() + CONFIG.infoPad * 2)
 end
 
 -- the width the notch is settled at or travelling to. Laying the row out again
@@ -743,11 +760,16 @@ local function setOpen(open)
 	if not open then
 		lastClosedWidth = targetWidth
 	end
-	-- the tray fades as it measures, so nothing appears on the last frame of the
-	-- size change: out fast on the way shut, in behind the opening
+	-- the tray fades only once the notch has finished opening, so its buttons are
+	-- never caught by the shape's moving edge; on the way shut it is gone in 70ms,
+	-- before the shape starts to shrink
 	if open then
 		tray.Visible = true
-		fadeTray(1, CONFIG.trayFadeIn)
+		task.delay(0.2, function()
+			if trayOpen then
+				fadeTray(1, CONFIG.trayFadeIn)
+			end
+		end)
 	else
 		fadeTray(0, CONFIG.trayFadeOut)
 	end
@@ -1089,7 +1111,7 @@ local keyButton = make("TextButton", {
 	Name = "MenuKey",
 	Text = "K",
 	Font = CONFIG.font,
-	TextSize = CONFIG.textSize + 2,
+	TextSize = CONFIG.keyTextSize,
 	TextColor3 = CONFIG.colour.text,
 	AutoButtonColor = false,
 	BackgroundColor3 = CONFIG.colour.buttonFill,
@@ -1149,7 +1171,7 @@ for index, entry in ipairs(STRIP) do
 		Name = entry.id,
 		Text = entry.text,
 		Font = CONFIG.font,
-		TextSize = CONFIG.buttonTextSize,
+		TextSize = CONFIG.stripTextSize,
 		TextColor3 = CONFIG.colour.text,
 		TextTransparency = 1,
 		AutoButtonColor = false,
@@ -1231,9 +1253,13 @@ setMenuOpen = function(open)
 	if open then
 		setStripHit(true)
 		task.spawn(function()
-			-- one gesture: the pill opens and its labels fade in together. The buttons
-			-- hold their position the whole time, so there is nothing to watch move.
-			task.spawn(runFill, CONFIG.menuStripOpenTime, 1)
+			-- the pill grows with its labels fully invisible, so its edge is never seen
+			-- cutting across one, and only then do the four fade in together where they
+			-- already are. Two beats instead of two things at once, which is what read
+			-- as the labels rearranging themselves while they appeared.
+			if not runFill(CONFIG.menuStripOpenTime, 1) then
+				return
+			end
 			runFade(CONFIG.menuStripFadeIn, 1)
 		end)
 	else
@@ -1774,6 +1800,8 @@ local function showUpdatePrompt(latest)
 	end))
 end
 
+local versionFetchWarned = false
+
 local function refreshVersion()
 	local ok, body = pcall(function()
 		return httpGet(CONFIG.verUrl)
@@ -1812,7 +1840,13 @@ local function refreshVersion()
 		end
 		return
 	end
-	-- no answer: show what this file says it is, not a placeholder
+	-- no answer: show what this file says it is, not a placeholder, and say so once:
+	-- a read that never reached Ver.txt is indistinguishable from "this copy is
+	-- current" if it stays silent, which is how a dead update check goes unnoticed
+	if not versionFetchWarned then
+		versionFetchWarned = true
+		warn("[Kbar] could not read Ver.txt: " .. tostring(body))
+	end
 	infoText.tag = "Indev"
 	infoText.version = CONFIG.versionFallback
 	composeInfo()
@@ -1848,6 +1882,10 @@ _G.Kbar = {
 	setMenuOpen = setMenuOpen,
 	commands = COMMANDS,
 	runCommand = runCommand,
+	-- ask Ver.txt again right now instead of waiting for the next 60s tick
+	checkUpdate = function()
+		return refreshVersion()
+	end,
 	toggleMenu = function()
 		setMenuOpen(not menuOpen)
 	end,
