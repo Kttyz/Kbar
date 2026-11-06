@@ -1,16 +1,16 @@
 --!nonstrict
 --[[
-	Kbar 1.3 — a client-side notch bar for Roblox.
+	Kbar 1.3b — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.3        tag and version come from Ver.txt
+		Indev | 12:00 | 1.3b       tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
-	The row above is placed from its own measurements, so it is centred on the
-	notch at any width, and the notch closes to it rather than to a fixed number.
+	The row above is one centred line of rich text, so Roblox centres it itself at
+	any width, and the notch closes around it rather than to a fixed number.
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb (Roblox's own player list), the health bar and its
@@ -44,7 +44,6 @@ local CONFIG = {
 	notchWidthClosed = 188,
 	notchRadius = 12,
 	infoRowHeight = 24,
-	infoGap = 12,
 	trayHeight = 94,
 	chevronHeight = 14,
 	chevronArrowInset = 8,
@@ -78,9 +77,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.3",
+	runningVersion = "1.3b",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.3",
+	versionFallback = "1.3b",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -458,101 +457,84 @@ local infoRow = make("Frame", {
 	Size = UDim2.new(1, 0, 0, CONFIG.infoRowHeight),
 }, bar)
 
--- The row is placed by hand from its measured parts. A UIListLayout with
--- HorizontalAlignment.Center inside an auto-sized frame feeds its own centring
--- offset back into that frame's width, so the frame settles wider than the text
--- and the text ends up left of middle. Measuring each part and stepping out from
--- the middle cannot drift that way, whatever the text says.
-local function infoSeparator()
-	return make("Frame", {
-		Name = "Separator",
-		BackgroundColor3 = CONFIG.colour.text,
-		BackgroundTransparency = 0.84,
-		BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 0, 0.5, 0),
-		Size = UDim2.fromOffset(1, 12),
-	}, infoRow)
+-- The line is one rich-text label that fills the row, so Roblox centres it itself:
+-- TextXAlignment.Center centres the rendered line inside the label, the label fills
+-- the row, the row fills the notch, and the notch is cut from TextBounds plus equal
+-- padding on both sides. The width Roblox centres and the width the notch is built
+-- from are the same number, so they cannot drift apart: not at any width, not open or
+-- shut, and there is no pixel offset or measured glyph anywhere in this.
+local SEPARATOR_COLOUR = "#2E2F31"
+
+local function hexOf(colour)
+	local ok, hex = pcall(function()
+		return colour:ToHex()
+	end)
+	if ok and typeof(hex) == "string" and #hex == 6 then
+		return "#" .. hex
+	end
+	return "#ECEEF1"
 end
 
-local tagLabel = label(infoRow, {
-	Name = "Tag",
-	Text = "Indev",
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 0, 0.5, 0),
-	AutomaticSize = Enum.AutomaticSize.X,
-	Size = UDim2.fromOffset(0, 14),
+local function escaped(text)
+	return (string.gsub(tostring(text), "[&<>]", { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;" }))
+end
+
+local infoLabel = label(infoRow, {
+	Name = "Line",
+	Text = "",
+	RichText = true,
+	TextSize = CONFIG.textSize,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	TextYAlignment = Enum.TextYAlignment.Center,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromScale(1, 1),
 })
-make("UISizeConstraint", { MaxSize = Vector2.new(88, 14) }, tagLabel)
 
-local tagSeparator = infoSeparator()
+-- what the line says. The three pieces are composed into one string, so they share
+-- one baseline and one centring decision instead of three separate ones.
+local infoText = {
+	tag = "Indev",
+	clock = "00:00",
+	version = CONFIG.versionFallback,
+}
 
-local clockLabel = label(infoRow, {
-	Name = "Clock",
-	Text = "00:00",
-	TextSize = CONFIG.textSize + 1,
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 0, 0.5, 0),
-	AutomaticSize = Enum.AutomaticSize.X,
-	Size = UDim2.fromOffset(0, 16),
-})
-make("UIStroke", {
-	Color = CONFIG.colour.text,
-	Thickness = 0.4,
-	Transparency = 0.55,
-	ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
-}, clockLabel)
+local function composeInfo()
+	infoLabel.Text = table.concat({
+		'<font color="' .. hexOf(CONFIG.colour.text) .. '">' .. escaped(infoText.tag) .. "</font>",
+		'<font color="' .. SEPARATOR_COLOUR .. '"> | </font>',
+		'<stroke color="' .. hexOf(CONFIG.colour.dim) .. '" thickness="0.4" transparency="0.55">'
+			.. escaped(infoText.clock)
+			.. "</stroke>",
+		'<font color="' .. SEPARATOR_COLOUR .. '"> | </font>',
+		'<font color="' .. hexOf(CONFIG.colour.dim) .. '">' .. escaped(infoText.version) .. "</font>",
+	})
+end
 
-local clockSeparator = infoSeparator()
+composeInfo()
 
-local verLabel = label(infoRow, {
-	Name = "Ver",
-	Text = CONFIG.versionFallback,
-	TextColor3 = CONFIG.colour.dim,
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 0, 0.5, 0),
-	AutomaticSize = Enum.AutomaticSize.X,
-	Size = UDim2.fromOffset(0, 14),
-})
-make("UISizeConstraint", { MaxSize = Vector2.new(88, 14) }, verLabel)
+-- the width of the line Roblox actually renders. TextBounds is the same measurement
+-- the text renderer uses to centre that line, so padding it equally on both sides is
+-- centring by construction, not by arithmetic that can drift.
+local function infoWidthNow()
+	local ok, bounds = pcall(function()
+		return infoLabel.TextBounds
+	end)
+	if ok and typeof(bounds) == "Vector2" then
+		return bounds.X
+	end
+	return 0
+end
 
-local infoParts = { tagLabel, tagSeparator, clockLabel, clockSeparator, verLabel }
-
--- width of the whole info row once laid out, which is also what decides how
--- narrow the notch may close to
-local infoWidth = 0
-
--- set once the notch and its widths exist, further down: laying the row out again
--- is what keeps a shut notch sized to the text it now holds
+-- set once the notch and its widths exist, further down: a longer tag or version
+-- re-cuts a shut notch around the text it now holds
 local relayoutNotch
 
-local function layoutInfo()
-	local total = 0
-	for index, part in ipairs(infoParts) do
-		total += part.AbsoluteSize.X
-		if index < #infoParts then
-			total += CONFIG.infoGap
-		end
-	end
-	infoWidth = total
-	local x = (infoRow.AbsoluteSize.X - total) / 2
-	for index, part in ipairs(infoParts) do
-		part.Position = UDim2.new(0, x, 0.5, 0)
-		x += part.AbsoluteSize.X
-		if index < #infoParts then
-			x += CONFIG.infoGap
-		end
-	end
+track(infoLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
 	if relayoutNotch then
 		relayoutNotch()
 	end
-end
-
-layoutInfo()
-track(infoRow:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutInfo))
-for _, part in ipairs(infoParts) do
-	track(part:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutInfo))
-end
+end))
 
 -- the tray, four across
 local tray = make("Frame", {
@@ -743,12 +725,17 @@ local trayOpen = CONFIG.startOpen
 -- the notch closes to the width of its own info row plus a margin, and never past
 -- the ceiling in CONFIG: the text is never clipped and never leaves a wide gap
 local function closedWidth()
-	return math.max(CONFIG.notchWidthClosed, infoWidth + 32)
+	return math.max(CONFIG.notchWidthClosed, infoWidthNow() + 32)
 end
 
 -- the width the notch is settled at or travelling to. Laying the row out again
 -- compares against this, so a pass mid-tween cannot snap the notch to its target.
 local lastClosedWidth = -1
+
+-- the one tween that owns the cluster's width. Ver.txt can land inside the closing
+-- tween, and a tween left running would write its stale goal over the width the new
+-- text asked for, leaving the shut notch permanently a few pixels too wide.
+local clusterTween
 
 local function setOpen(open)
 	trayOpen = open
@@ -764,7 +751,12 @@ local function setOpen(open)
 	else
 		fadeTray(0, CONFIG.trayFadeOut)
 	end
-	tween(cluster, motionInfo(0.2), {
+	if clusterTween then
+		pcall(function()
+			clusterTween:Cancel()
+		end)
+	end
+	clusterTween = tween(cluster, motionInfo(0.2), {
 		Size = UDim2.fromOffset(
 			targetWidth,
 			(open and openHeight or closedHeight) + CONFIG.notchRadius
@@ -801,6 +793,12 @@ relayoutNotch = function()
 		return
 	end
 	lastClosedWidth = width
+	if clusterTween then
+		pcall(function()
+			clusterTween:Cancel()
+		end)
+		clusterTween = nil
+	end
 	cluster.Size = UDim2.fromOffset(width, closedHeight + CONFIG.notchRadius)
 end
 
@@ -1607,8 +1605,9 @@ end
 task.spawn(function()
 	while true do
 		local reading = localClock()
-		if reading then
-			clockLabel.Text = reading
+		if reading and reading ~= infoText.clock then
+			infoText.clock = reading
+			composeInfo()
 		end
 		local okNow, now = pcall(function()
 			return os.time()
@@ -1640,6 +1639,12 @@ local function versionParts(text)
 	return parts
 end
 
+-- the build letter after the number: 1.3b is one build past 1.3, and b is past a,
+-- so a lettered file is newer than the bare number it shares
+local function versionSuffix(text)
+	return string.match(string.lower(tostring(text or "")), "(%a)$") or ""
+end
+
 local function isNewer(latest, running)
 	local a = versionParts(latest)
 	local b = versionParts(running)
@@ -1655,7 +1660,7 @@ local function isNewer(latest, running)
 			return false
 		end
 	end
-	return false
+	return versionSuffix(latest) > versionSuffix(running)
 end
 
 local function applyUpdate()
@@ -1785,15 +1790,22 @@ local function refreshVersion()
 				end
 			end
 		end
-		-- a version is digits and dots. Anything else in that line is noise, not
-		-- a number to print, so it is dropped rather than shown.
-		if version and not string.match(version, "^%d+%.?%d*$") then
+		-- a version is digits, an optional dot, digits, and an optional build letter,
+		-- so 1.3b is a version and 1.3 is too. Anything else in that line is noise,
+		-- not a number to print, so it is dropped rather than shown.
+		if version and not string.match(version, "^%d+%.?%d*%a?$") then
 			version = nil
 		end
-		if tag then
-			tagLabel.Text = tag
+		-- a tag from the file is drawn inside the notch, so it is capped: a long one
+		-- would stretch the shut bar past the screen edge
+		if tag and #tag > 14 then
+			tag = string.sub(tag, 1, 14)
 		end
-		verLabel.Text = version or CONFIG.versionFallback
+		if tag then
+			infoText.tag = tag
+		end
+		infoText.version = version or CONFIG.versionFallback
+		composeInfo()
 		if version and isNewer(version, CONFIG.runningVersion) then
 			-- the file is ahead of this copy: offer the swap, once
 			task.spawn(showUpdatePrompt, version)
@@ -1801,8 +1813,9 @@ local function refreshVersion()
 		return
 	end
 	-- no answer: show what this file says it is, not a placeholder
-	tagLabel.Text = "Indev"
-	verLabel.Text = CONFIG.versionFallback
+	infoText.tag = "Indev"
+	infoText.version = CONFIG.versionFallback
+	composeInfo()
 end
 
 task.spawn(function()
