@@ -1,21 +1,23 @@
 --!nonstrict
 --[[
-	Kbar 1.3c — a client-side notch bar for Roblox.
+	Kbar 1.4 — a client-side notch bar for Roblox.
 
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.3c       tag and version come from Ver.txt
+		Indev | 12:00 | 1.4       tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
-	The row above is three labels in a row that hugs its own width and is centred by
-	its anchor, so Roblox centres the group itself at any width, and the notch closes
-	around it rather than to a fixed number.
+	The line is one label at one size, filling the row with TextXAlignment.Center,
+	so Roblox centres the run itself; the shut notch is cut from its TextBounds plus
+	an equal margin each side, which makes the two gaps the same number.
 
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
-	Top right: the person orb (Roblox's own player list), the health bar and its
-	red cross, and the K button, which opens the menu below it.
+	Top right: the person orb, the health bar and its red cross, and the K button.
+	Tab, or the orb, opens K-Playerlist: the people in the server, the game's own
+	leaderstat down the right hand column when it keeps one, and a row that opens
+	Friend request / Examine Avatar / Block / Report Abuse. Roblox's own list is off.
 	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Notify.
 	It slides out empty, fades its labels in only once it is fully open, and on the
 	way back it fades them out fast before the strip itself closes.
@@ -40,11 +42,12 @@ local CONFIG = {
 	startOpen = false,
 
 	notchWidth = 384,
-	-- the closed notch only has to hold the info row, so it is measured off that
-	-- row: this is the ceiling it is allowed to grow back to
-	notchWidthClosed = 188,
+	-- the shut notch is cut from its own info line plus an equal margin each side, so
+	-- the text sits dead centre by construction. This is only the floor, so a short
+	-- line (a brief tag, a two-digit version) never leaves a stubby bar
+	notchWidthClosed = 190,
 	notchRadius = 12,
-	infoRowHeight = 24,
+	infoRowHeight = 26,
 	trayHeight = 94,
 	chevronHeight = 14,
 	chevronArrowInset = 8,
@@ -78,9 +81,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.3c",
+	runningVersion = "1.4",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.3c",
+	versionFallback = "1.4",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -95,14 +98,12 @@ local CONFIG = {
 	smallTextSize = 10,
 	-- the tray's two-line labels and the strip's labels, a step up from 12
 	buttonTextSize = 13,
-	-- the info row's three pieces are separate labels now, so each keeps its own
-	-- size: the clock reads a little larger than the tag, the version a little smaller
-	clockTextSize = 15,
-	versionTextSize = 12,
-	separatorTextSize = 11,
-	-- the gap between those pieces, and the margin the shut notch keeps each side
-	infoGap = 7,
-	infoPad = 16,
+	-- the info line is one label at one size: tag, clock and version read the same,
+	-- so no piece is visually heavier than its neighbour and the run has no bias
+	infoTextSize = 16,
+	-- the gap between the pieces of that line, and the margin the shut notch keeps
+	infoGap = 6,
+	infoPad = 18,
 	-- the mini bar: the K itself and the four labels beside it
 	keyTextSize = 20,
 	stripTextSize = 14,
@@ -171,6 +172,22 @@ local function httpGet(url)
 		end
 	end
 	return HttpService:GetAsync(url)
+end
+
+-- A raw GitHub URL is served through a CDN that caches, and an executor's own
+-- HttpGet may cache too, so fetching the same URL twice can hand back the copy from
+-- before a push. Every read carries a stamp that moves with the clock, which makes
+-- each one a different URL and takes the stale copy out of the path.
+local function cacheBust(url)
+	local ok, now = pcall(function()
+		return os.time()
+	end)
+	local stamp = ok and tostring(now) or tostring(math.floor(os.clock() * 1000))
+	return url .. (string.find(url, "?", 1, true) and "&" or "?") .. "t=" .. stamp
+end
+
+local function fetch(url)
+	return httpGet(cacheBust(url))
 end
 
 local player = Players.LocalPlayer
@@ -470,18 +487,17 @@ local infoRow = make("Frame", {
 	Size = UDim2.new(1, 0, 0, CONFIG.infoRowHeight),
 }, bar)
 
--- The line is a row that hugs its own content: one label per piece, no padding, a
--- left-aligned list layout inside a frame sized to what it holds. That frame's anchor
--- is 0.5, so Roblox centres it by its own bounding box: the margin each side of the
--- text is the same number because nothing adds to either side, and the shut notch is
--- cut from that same box plus equal padding. No pixel offset, no measured glyph, and
--- no layout feeding a centring offset back into the width it is centring.
+-- The line is three pieces laid out by Roblox in a row that hugs its own width and is
+-- centred by its anchor. The tag and the version take the SAME width, whichever of the
+-- two is longer, so the clock lands on the notch's centre line exactly and the two end
+-- groups are mirror images however long the tag or the number happens to be. That is
+-- what makes it read as centred: equal advances on both sides of the middle, not a
+-- string whose two ends happen to be different lengths.
 local infoRowGroup = make("Frame", {
 	Name = "Line",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.new(0, 0, 1, 0),
-	AutomaticSize = Enum.AutomaticSize.X,
 	BackgroundTransparency = 1,
 }, infoRow)
 
@@ -493,20 +509,6 @@ make("UIListLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, infoRowGroup)
 
-local function infoPiece(name, text, textSize, colour, order)
-	return label(infoRowGroup, {
-		Name = name,
-		Text = text,
-		TextSize = textSize,
-		TextColor3 = colour,
-		Size = UDim2.fromOffset(0, 0),
-		AutomaticSize = Enum.AutomaticSize.XY,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		LayoutOrder = order,
-	})
-end
-
 -- what the line says
 local infoText = {
 	tag = "Indev",
@@ -514,25 +516,52 @@ local infoText = {
 	version = CONFIG.versionFallback,
 }
 
-local separatorColour = Color3.fromRGB(46, 47, 49)
+local function infoPiece(name, text, order, wide)
+	local piece = label(infoRowGroup, {
+		Name = name,
+		Text = text,
+		TextSize = CONFIG.infoTextSize,
+		TextColor3 = CONFIG.colour.text,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		LayoutOrder = order,
+		ZIndex = 4,
+	})
+	if wide then
+		-- a fixed width, height from the text: the box the two ends share
+		piece.AutomaticSize = Enum.AutomaticSize.Y
+		piece.Size = UDim2.fromOffset(0, 0)
+	else
+		piece.AutomaticSize = Enum.AutomaticSize.XY
+		piece.Size = UDim2.fromOffset(0, 0)
+	end
+	return piece
+end
 
-local tagLabel = infoPiece("Tag", infoText.tag, CONFIG.textSize, CONFIG.colour.text, 1)
-infoPiece("Separator1", "|", CONFIG.separatorTextSize, separatorColour, 2)
-local clockLabel = infoPiece("Clock", infoText.clock, CONFIG.clockTextSize, CONFIG.colour.dim, 3)
--- the soft glow the old rich-text clock had, kept on its own label
-stroke(clockLabel, CONFIG.colour.dim, 0.4, 0.55)
-infoPiece("Separator2", "|", CONFIG.separatorTextSize, separatorColour, 4)
-local versionLabel = infoPiece("Version", infoText.version, CONFIG.versionTextSize, CONFIG.colour.dim, 5)
+local tagLabel = infoPiece("Tag", infoText.tag, 1, true)
+local separatorOne = infoPiece("Separator1", "|", 2, false)
+separatorOne.TextColor3 = CONFIG.colour.dimmer
+local clockLabel = infoPiece("Clock", infoText.clock, 3, false)
+local separatorTwo = infoPiece("Separator2", "|", 4, false)
+separatorTwo.TextColor3 = CONFIG.colour.dimmer
+local versionLabel = infoPiece("Version", infoText.version, 5, true)
 
 local function composeInfo()
 	tagLabel.Text = infoText.tag
 	clockLabel.Text = infoText.clock
 	versionLabel.Text = infoText.version
+	-- the two end groups take the wider of the two, so the row is symmetric about the
+	-- clock: a long tag widens the version's box to match it, and the other way round
+	local endWidth = math.max(tagLabel.TextBounds.X, versionLabel.TextBounds.X)
+	if endWidth > 0 then
+		tagLabel.Size = UDim2.fromOffset(endWidth, 0)
+		versionLabel.Size = UDim2.fromOffset(endWidth, 0)
+	end
 end
 
 composeInfo()
 
--- the row's own width, measured by Roblox from the labels it holds
+-- the row's own width, measured by Roblox from the pieces it holds
 local function infoWidthNow()
 	local ok, size = pcall(function()
 		return infoRowGroup.AbsoluteSize.X
@@ -754,24 +783,16 @@ local lastClosedWidth = -1
 -- text asked for, leaving the shut notch permanently a few pixels too wide.
 local clusterTween
 
-local function setOpen(open)
-	trayOpen = open
+-- which open or close owns the shape right now: a close that is still fading the
+-- tray must not be overtaken by a newer open, and an open must not be shrunk by the
+-- delayed half of a close it interrupted
+local openToken = 0
+
+-- the shape's own move: width, height, the chevron and the arrow
+local function moveShape(open)
 	local targetWidth = open and CONFIG.notchWidth or closedWidth()
 	if not open then
 		lastClosedWidth = targetWidth
-	end
-	-- the tray fades only once the notch has finished opening, so its buttons are
-	-- never caught by the shape's moving edge; on the way shut it is gone in 70ms,
-	-- before the shape starts to shrink
-	if open then
-		tray.Visible = true
-		task.delay(0.2, function()
-			if trayOpen then
-				fadeTray(1, CONFIG.trayFadeIn)
-			end
-		end)
-	else
-		fadeTray(0, CONFIG.trayFadeOut)
 	end
 	if clusterTween then
 		pcall(function()
@@ -794,11 +815,33 @@ local function setOpen(open)
 			BackgroundColor3 = open and CONFIG.colour.text or CONFIG.colour.dim,
 		})
 	end
-	if not open then
-		task.delay(0.21, function()
-			if not trayOpen then
-				tray.Visible = false
+end
+
+local function setOpen(open)
+	trayOpen = open
+	openToken += 1
+	local token = openToken
+	if open then
+		-- opening: the shape moves first and the buttons fade in behind it, so a
+		-- label is never seen through the moving edge
+		tray.Visible = true
+		moveShape(true)
+		task.delay(motionInfo(0.2).Time, function()
+			if token == openToken and trayOpen then
+				fadeTray(1, CONFIG.trayFadeIn)
 			end
+		end)
+	else
+		-- closing is the other way round, and this is the point of it: the buttons are
+		-- gone BEFORE the shape starts to move. Starting the shrink and the fade on the
+		-- same frame left live buttons sitting inside a bar that was already closing.
+		fadeTray(0, CONFIG.trayFadeOut)
+		task.delay(CONFIG.trayFadeOut, function()
+			if token ~= openToken or trayOpen then
+				return
+			end
+			tray.Visible = false
+			moveShape(false)
 		end)
 	end
 end
@@ -1352,7 +1395,7 @@ local function runScript(name, url)
 	notify(name, "Loading " .. name)
 	task.spawn(function()
 		local ok, err = pcall(function()
-			local source = httpGet(url)
+			local source = fetch(url)
 			if typeof(loadstring) == "function" then
 				local chunk = loadstring(source)
 				if not chunk then
@@ -1380,7 +1423,7 @@ local function serverHop()
 	task.spawn(function()
 		local ok, err = pcall(function()
 			local servers = {}
-			local raw = httpGet(
+			local raw = fetch(
 				"https://games.roblox.com/v1/games/"
 					.. tostring(game.PlaceId)
 					.. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
@@ -1427,26 +1470,489 @@ local function leaveGame()
 	end)
 end
 
--- Roblox's own player list, the one Tab opens
-local function togglePlayerList()
-	local usedExecutorKeypress = false
-	pcall(function()
-		if typeof(keypress) == "function" and typeof(keyrelease) == "function" then
-			keypress(Enum.KeyCode.Tab)
-			keyrelease(Enum.KeyCode.Tab)
-			usedExecutorKeypress = true
+----------------------------------------------------------------------
+-- K-Playerlist
+----------------------------------------------------------------------
+
+-- Roblox's own list is turned off and this one takes its place; Tab opens it, and so
+-- does the orb. A row is a person in the server. When the game keeps leaderstats the
+-- right hand column shows that value (a time, a score, a rank name) and the panel is
+-- the wide one; a game that keeps none gets the narrow layout with no column at all.
+local PLAYER_ROW_HEIGHT = 32
+local PLAYER_ROW_GAP = 4
+local PLAYER_VISIBLE_ROWS = 8
+local PLAYER_PAD = 8
+local PLAYER_TITLE_HEIGHT = 24
+local PLAYER_HEADER_HEIGHT = 32
+local PLAYER_ELEMENT_WIDTH = 58
+local PLAYER_PANEL_NARROW = 206
+local PLAYER_PANEL_WIDE = 264
+
+local PLAYER_PANEL_HEIGHT = PLAYER_TITLE_HEIGHT
+	+ 4
+	+ PLAYER_HEADER_HEIGHT
+	+ 4
+	+ PLAYER_VISIBLE_ROWS * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP)
+	+ PLAYER_PAD
+
+-- the panel is only as tall as the people in it, up to the eight rows it shows; a
+-- server of one is one row, not eight empty slots, and past eight it scrolls
+local function playerPanelHeight(rowCount)
+	local rows = math.clamp(rowCount, 3, PLAYER_VISIBLE_ROWS)
+	return PLAYER_TITLE_HEIGHT + 4 + PLAYER_HEADER_HEIGHT + 4 + rows * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP) + PLAYER_PAD
+end
+
+local playerList = panelled(make("Frame", {
+	Name = "PlayerList",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -CONFIG.orbMargin, 0, CONFIG.orbTop + CONFIG.orbSize + 6),
+	Size = UDim2.fromOffset(PLAYER_PANEL_NARROW, PLAYER_PANEL_HEIGHT),
+	BackgroundColor3 = CONFIG.colour.background,
+	ClipsDescendants = true,
+	Visible = false,
+	ZIndex = 12,
+}), 0)
+corner(playerList, 10)
+stroke(playerList, CONFIG.colour.edge, CONFIG.strokeThickness, 0.25)
+playerList.Parent = gui
+
+local playerTitlePlate = make("Frame", {
+	Name = "TitlePlate",
+	Size = UDim2.new(1, 0, 0, PLAYER_TITLE_HEIGHT),
+	BackgroundColor3 = CONFIG.colour.backgroundTop,
+	BorderSizePixel = 0,
+	ZIndex = 13,
+}, playerList)
+corner(playerTitlePlate, 10)
+
+label(playerTitlePlate, {
+	Name = "Title",
+	Text = "K-Playerlist",
+	TextSize = 13,
+	TextColor3 = CONFIG.colour.red,
+	Size = UDim2.new(1, 0, 1, 0),
+	ZIndex = 14,
+})
+
+local playerHeader = make("Frame", {
+	Name = "Header",
+	Position = UDim2.fromOffset(PLAYER_PAD, PLAYER_TITLE_HEIGHT + 4),
+	Size = UDim2.new(1, -PLAYER_PAD * 2, 0, PLAYER_HEADER_HEIGHT),
+	BackgroundTransparency = 1,
+	ZIndex = 13,
+}, playerList)
+
+-- the header carries no caption row: the name columns are self-evident, and the
+-- avatar box belongs beside each person's own name, not up here on its own. The only
+-- captions left are the two over the element column, which a game may not have at all.
+local elementTitle = label(playerHeader, {
+	Name = "ElementHeader",
+	Text = "Element",
+	TextSize = 11,
+	TextColor3 = CONFIG.colour.red,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, 0, 0, 3),
+	Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH, 13),
+	Visible = false,
+	ZIndex = 14,
+})
+local elementSubTitle = label(playerHeader, {
+	Name = "NumberHeader",
+	Text = "Number",
+	TextSize = 11,
+	TextColor3 = CONFIG.colour.red,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, 0, 0, 16),
+	Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH, 13),
+	Visible = false,
+	ZIndex = 14,
+})
+
+local playerRows = make("ScrollingFrame", {
+	Name = "Rows",
+	Position = UDim2.fromOffset(PLAYER_PAD, PLAYER_TITLE_HEIGHT + 4 + PLAYER_HEADER_HEIGHT + 4),
+	Size = UDim2.new(1, -PLAYER_PAD * 2, 0, PLAYER_VISIBLE_ROWS * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP)),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 3,
+	ScrollBarImageColor3 = CONFIG.colour.edge,
+	ScrollBarImageTransparency = 0.4,
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+	ZIndex = 13,
+}, playerList)
+
+make("UIListLayout", {
+	Padding = UDim.new(0, PLAYER_ROW_GAP),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, playerRows)
+
+-- the first leaderstat is the game's own counter: a time, a score, a rank name
+local function playerElement(target)
+	local stats = target:FindFirstChild("leaderstats")
+	if not stats then
+		return nil
+	end
+	for _, child in ipairs(stats:GetChildren()) do
+		local kind = child.ClassName
+		if kind == "IntValue" or kind == "NumberValue" or kind == "StringValue" or kind == "BoolValue" then
+			local ok, value = pcall(function()
+				return child.Value
+			end)
+			if ok and value ~= nil then
+				return tostring(value)
+			end
+		end
+	end
+	return nil
+end
+
+-- the menu a row opens: the same four things Roblox's own list offers, drawn here
+local MENU_WIDTH = 236
+local MENU_HEADER = 52
+local MENU_BUTTON = 30
+local PLAYER_ACTIONS = {
+	{ id = "friend", label = "Friend request" },
+	{ id = "examine", label = "Examine Avatar" },
+	{ id = "block", label = "Block" },
+	{ id = "report", label = "Report Abuse" },
+}
+
+local playerMenu = nil
+local playerMenuTarget = nil
+
+local function closePlayerMenu()
+	if playerMenu then
+		playerMenu:Destroy()
+		playerMenu = nil
+	end
+	playerMenuTarget = nil
+end
+
+local function avatarImage(target, kind, size)
+	local ok, image = pcall(function()
+		return Players:GetUserThumbnailAsync(target.UserId, kind, size)
+	end)
+	if ok and typeof(image) == "string" and image ~= "" then
+		return image
+	end
+	return nil
+end
+
+-- where a thing really sits, answering a zero point rather than throwing when the
+-- question cannot be asked (a gui that has not been laid out yet, a harness that has
+-- no layout at all)
+local function absolutePoint(instance)
+	local ok, position = pcall(function()
+		return instance.AbsolutePosition
+	end)
+	if ok and position then
+		return position
+	end
+	return Vector2.new(0, 0)
+end
+
+local function openPlayerMenu(target, row)
+	closePlayerMenu()
+	local anchorPoint = absolutePoint(gui)
+	local rowPoint = absolutePoint(row)
+	local menu = panelled(make("Frame", {
+		Name = "PlayerMenu",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromOffset(
+			absolutePoint(playerList).X - anchorPoint.X - 6,
+			rowPoint.Y - anchorPoint.Y
+		),
+		Size = UDim2.fromOffset(MENU_WIDTH, MENU_HEADER + #PLAYER_ACTIONS * (MENU_BUTTON + 2) + 6),
+		BackgroundColor3 = CONFIG.colour.background,
+		ClipsDescendants = true,
+		ZIndex = 20,
+	}), 0)
+	corner(menu, 10)
+	stroke(menu, CONFIG.colour.edge, CONFIG.strokeThickness, 0.2)
+	menu.Parent = gui
+	playerMenu = menu
+	playerMenuTarget = target
+
+	local band = make("Frame", {
+		Name = "Band",
+		Size = UDim2.new(1, 0, 0, MENU_HEADER),
+		BackgroundColor3 = CONFIG.colour.panel,
+		BorderSizePixel = 0,
+		ZIndex = 21,
+	}, menu)
+	corner(band, 10)
+
+	local avatar = make("ImageLabel", {
+		Name = "Avatar",
+		Position = UDim2.fromOffset(8, 6),
+		Size = UDim2.fromOffset(40, 40),
+		BackgroundColor3 = CONFIG.colour.backgroundTop,
+		BorderSizePixel = 0,
+		Image = "",
+		ZIndex = 22,
+	}, band)
+	corner(avatar, 6)
+	stroke(avatar, CONFIG.colour.edge, 2, 0.3)
+
+	label(band, {
+		Name = "Name",
+		Text = target.DisplayName,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(56, 9),
+		Size = UDim2.new(1, -64, 0, 16),
+		ZIndex = 22,
+	})
+	label(band, {
+		Name = "Handle",
+		Text = "@" .. target.Name,
+		TextSize = 11,
+		TextColor3 = CONFIG.colour.dim,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(56, 25),
+		Size = UDim2.new(1, -64, 0, 14),
+		ZIndex = 22,
+	})
+
+	task.spawn(function()
+		local image = avatarImage(target, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+		if image and avatar.Parent then
+			avatar.Image = image
 		end
 	end)
-	if usedExecutorKeypress then
-		return
+
+	for index, action in ipairs(PLAYER_ACTIONS) do
+		local button = make("TextButton", {
+			Name = action.id,
+			Text = action.label,
+			Font = CONFIG.font,
+			TextSize = 12,
+			TextColor3 = CONFIG.colour.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			AutoButtonColor = false,
+			BackgroundColor3 = CONFIG.colour.buttonFill,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(8, MENU_HEADER + 3 + (index - 1) * (MENU_BUTTON + 2)),
+			Size = UDim2.new(1, -16, 0, MENU_BUTTON),
+			ZIndex = 21,
+		}, menu)
+		corner(button, 6)
+		make("UIPadding", {
+			PaddingLeft = UDim.new(0, 9),
+		}, button)
+
+		button.MouseEnter:Connect(function()
+			button.BackgroundTransparency = 0.9
+		end)
+		button.MouseLeave:Connect(function()
+			button.BackgroundTransparency = 1
+		end)
+		button.Activated:Connect(function()
+			if action.id == "examine" then
+				task.spawn(function()
+					local image = avatarImage(target, Enum.ThumbnailType.AvatarBust, Enum.ThumbnailSize.Size420x420)
+					if image and avatar.Parent then
+						avatar.Image = image
+					end
+				end)
+				return
+			end
+			local core = action.id == "friend" and "PromptSendFriendRequest"
+				or action.id == "block" and "PromptBlockPlayer"
+				or "PromptReportPlayer"
+			local ok = pcall(function()
+				StarterGui:SetCore(core, target)
+			end)
+			if not ok then
+				notify("K-Playerlist", action.label .. " is not available here", nil, true)
+			end
+			closePlayerMenu()
+		end)
 	end
+end
+
+local elementLabels = {}
+
+local function clearPlayerRows()
+	for _, child in ipairs(playerRows:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+	elementLabels = {}
+end
+
+local function rebuildPlayerRows()
+	local people = Players:GetPlayers()
+	table.sort(people, function(a, b)
+		return string.lower(a.Name) < string.lower(b.Name)
+	end)
+
+	local wide = false
+	for _, target in ipairs(people) do
+		if playerElement(target) ~= nil then
+			wide = true
+			break
+		end
+	end
+
+	playerList.Size = UDim2.fromOffset(wide and PLAYER_PANEL_WIDE or PLAYER_PANEL_NARROW, playerPanelHeight(#people))
+	playerRows.Size = UDim2.new(1, -PLAYER_PAD * 2, 0, math.clamp(#people, 3, PLAYER_VISIBLE_ROWS) * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP))
+	elementTitle.Visible = wide
+	elementSubTitle.Visible = wide
+	clearPlayerRows()
+
+	for index, target in ipairs(people) do
+		local row = make("TextButton", {
+			Name = "Row_" .. tostring(target.UserId),
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = CONFIG.colour.backgroundTop,
+			BackgroundTransparency = 0.55,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, PLAYER_ROW_HEIGHT),
+			LayoutOrder = index,
+			ZIndex = 14,
+		}, playerRows)
+		corner(row, 6)
+		stroke(row, CONFIG.colour.edge, 2, 0.25)
+
+		-- each person's own face sits beside their own name, which is where the mockup
+		-- puts it: not a caption row above the list
+		local face = make("ImageLabel", {
+			Name = "Avatar",
+			Position = UDim2.fromOffset(6, 6),
+			Size = UDim2.fromOffset(20, 20),
+			BackgroundColor3 = CONFIG.colour.backgroundTop,
+			BorderSizePixel = 0,
+			Image = "",
+			ZIndex = 15,
+		}, row)
+		corner(face, 4)
+		stroke(face, CONFIG.colour.edge, 1, 0.35)
+		local faceOwner = target
+		task.spawn(function()
+			local image = avatarImage(faceOwner, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+			if image and face.Parent then
+				face.Image = image
+			end
+		end)
+
+		local inset = 34 + (wide and PLAYER_ELEMENT_WIDTH or 0)
+		label(row, {
+			Name = "Display",
+			Text = target.DisplayName,
+			TextSize = 12,
+			TextColor3 = CONFIG.colour.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(32, 3),
+			Size = UDim2.new(1, -inset, 0, 13),
+			ZIndex = 15,
+		})
+		label(row, {
+			Name = "HandleLine",
+			Text = "@" .. target.Name,
+			TextSize = 10,
+			TextColor3 = CONFIG.colour.dim,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(32, 16),
+			Size = UDim2.new(1, -inset, 0, 12),
+			ZIndex = 15,
+		})
+
+		if wide then
+			local element = label(row, {
+				Name = "Element",
+				Text = tostring(playerElement(target) or ""),
+				TextSize = 11,
+				TextColor3 = CONFIG.colour.dim,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -8, 0, 9),
+				Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH - 8, 14),
+				ZIndex = 15,
+			})
+			elementLabels[target.UserId] = element
+		end
+
+		-- these live and die with the row, so they are not tracked: destroying the row
+		-- disconnects them, and a rebuild would otherwise stack one set per second
+		row.MouseEnter:Connect(function()
+			row.BackgroundTransparency = 0.35
+		end)
+		row.MouseLeave:Connect(function()
+			row.BackgroundTransparency = 0.55
+		end)
+		row.Activated:Connect(function()
+			-- pressing the same person again closes their menu; pressing another moves it
+			if playerMenuTarget == target then
+				closePlayerMenu()
+				return
+			end
+			openPlayerMenu(target, row)
+		end)
+	end
+end
+
+local function setPlayerListOpen(open)
+	open = not not open
+	playerList.Visible = open
+	if open then
+		rebuildPlayerRows()
+	else
+		closePlayerMenu()
+	end
+end
+
+local function togglePlayerList()
+	setPlayerListOpen(not playerList.Visible)
+end
+
+-- Roblox's own list off, ours on. The core call has to be repeated after a respawn,
+-- the same way the health bar is.
+local function hideCorePlayerList()
 	pcall(function()
-		local virtualInput = game:GetService("VirtualInputManager")
-		virtualInput:SendKeyEvent(true, Enum.KeyCode.Tab, false, false)
-		task.wait(0.05)
-		virtualInput:SendKeyEvent(false, Enum.KeyCode.Tab, false, false)
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 	end)
 end
+hideCorePlayerList()
+track(player.CharacterAdded:Connect(function()
+	task.delay(1, hideCorePlayerList)
+end))
+
+pcall(function()
+	track(Players.PlayerAdded:Connect(function()
+		if playerList.Visible then
+			rebuildPlayerRows()
+		end
+	end))
+	track(Players.PlayerRemoving:Connect(function()
+		if playerList.Visible then
+			rebuildPlayerRows()
+		end
+	end))
+end)
+
+-- the element column is a live counter in most games, so it is refreshed in place
+-- rather than through a rebuild, which would throw away every row's hover state
+task.spawn(function()
+	while true do
+		if playerList.Visible then
+			for userId, element in pairs(elementLabels) do
+				local target = Players:GetPlayerByUserId(userId)
+				if target and element.Parent then
+					element.Text = tostring(playerElement(target) or "")
+				end
+			end
+		end
+		task.wait(0.5)
+	end
+end)
 
 handlers.fps = function()
 	setFpsDisplay(not fpsEnabled)
@@ -1570,7 +2076,7 @@ local function bindCommands()
 	end
 end
 
--- the person orb opens and closes Roblox's own list
+-- the person orb opens and closes the playerlist
 track(orb.Activated:Connect(togglePlayerList))
 track(orb.MouseEnter:Connect(function()
 	tween(glyph, motionInfo(0.12), { Size = UDim2.fromOffset(21, 21) })
@@ -1590,15 +2096,23 @@ track(keyButton.Activated:Connect(function()
 	setMenuOpen(not menuOpen)
 end))
 
--- K toggles the menu, Escape closes it
+-- K toggles the menu, Tab the playerlist, Escape closes whichever is open
 track(UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
 	if input.KeyCode == Enum.KeyCode.K then
 		setMenuOpen(not menuOpen)
-	elseif input.KeyCode == Enum.KeyCode.Escape and menuOpen then
-		setMenuOpen(false)
+	elseif input.KeyCode == Enum.KeyCode.Tab then
+		togglePlayerList()
+	elseif input.KeyCode == Enum.KeyCode.Escape then
+		if playerMenu then
+			closePlayerMenu()
+		elseif playerList.Visible then
+			setPlayerListOpen(false)
+		elseif menuOpen then
+			setMenuOpen(false)
+		end
 	end
 end))
 
@@ -1696,7 +2210,7 @@ local function applyUpdate()
 	end
 	task.wait(0.1)
 	local ok, err = pcall(function()
-		local source = httpGet(CONFIG.updateUrl)
+		local source = fetch(CONFIG.updateUrl)
 		if typeof(loadstring) == "function" then
 			local chunk = loadstring(source)
 			if not chunk then
@@ -1804,7 +2318,7 @@ local versionFetchWarned = false
 
 local function refreshVersion()
 	local ok, body = pcall(function()
-		return httpGet(CONFIG.verUrl)
+		return fetch(CONFIG.verUrl)
 	end)
 	if ok and typeof(body) == "string" and #body > 0 then
 		local tag, version
@@ -1895,6 +2409,8 @@ _G.Kbar = {
 	togglePing = function()
 		setPingDisplay(not pingEnabled)
 	end,
+	playerList = setPlayerListOpen,
+	togglePlayerList = togglePlayerList,
 	destroy = function()
 		for _, connection in ipairs(connections) do
 			pcall(function()
@@ -1902,6 +2418,10 @@ _G.Kbar = {
 			end)
 		end
 		connections = {}
+		-- give Roblox's own list back, so unloading leaves the game as it was found
+		pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true)
+		end)
 		if gui.Parent then
 			gui:Destroy()
 		end
