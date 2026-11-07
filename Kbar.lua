@@ -1,11 +1,13 @@
 --!nonstrict
 --[[
-	Kbar 1.4 — a client-side notch bar for Roblox.
+	Kbar 1.4b — a client-side notch bar for Roblox.
 
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua"))()
+	-- the ?t= is the cache buster: a plain URL can hand back the copy GitHub's CDN
+	-- cached before the last push, which is how a fresh execute starts an old bar
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua?t=" .. os.time()))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.4       tag and version come from Ver.txt
+		Indev | 12:00 | 1.4b      tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
@@ -81,9 +83,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.4",
+	runningVersion = "1.4b",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.4",
+	versionFallback = "1.4b",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -163,6 +165,10 @@ local TextChatService = game:GetService("TextChatService")
 
 -- game:HttpGet is an executor global; Studio and vanilla clients do not have it,
 -- so fall back to HttpService. Same call shape either way.
+--
+-- GetAsync's second argument is its own cache switch, and it is worth passing even
+-- with the stamp below: a unique URL defeats the CDN, while `true` here defeats the
+-- response cache Roblox itself keeps, which keys on the URL the game asked for.
 local function httpGet(url)
 	local direct = game.HttpGet
 	if typeof(direct) == "function" then
@@ -171,18 +177,31 @@ local function httpGet(url)
 			return body
 		end
 	end
+	local okCached, body = pcall(function()
+		return HttpService:GetAsync(url, true)
+	end)
+	if okCached then
+		return body
+	end
 	return HttpService:GetAsync(url)
 end
 
 -- A raw GitHub URL is served through a CDN that caches, and an executor's own
 -- HttpGet may cache too, so fetching the same URL twice can hand back the copy from
 -- before a push. Every read carries a stamp that moves with the clock, which makes
--- each one a different URL and takes the stale copy out of the path.
+-- each one a different URL and takes the stale copy out of the path. The stamp is
+-- seconds plus a live fraction, so two reads inside one second still differ.
 local function cacheBust(url)
 	local ok, now = pcall(function()
 		return os.time()
 	end)
-	local stamp = ok and tostring(now) or tostring(math.floor(os.clock() * 1000))
+	-- seconds for the readable part, and a fraction that moves every frame, so two
+	-- reads inside the same second are still two different URLs to the CDN
+	local okClock, fine = pcall(function()
+		return os.clock()
+	end)
+	local fraction = okClock and tostring(math.floor((fine % 1) * 100000)) or "0"
+	local stamp = (ok and tostring(now) or "0") .. "." .. fraction
 	return url .. (string.find(url, "?", 1, true) and "&" or "?") .. "t=" .. stamp
 end
 
@@ -498,6 +517,9 @@ local infoRowGroup = make("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.new(0, 0, 1, 0),
+	-- the row is exactly as wide as the pieces in it, and that is the width the notch
+	-- is cut from: without this it measures zero and the line spills out of the bar
+	AutomaticSize = Enum.AutomaticSize.X,
 	BackgroundTransparency = 1,
 }, infoRow)
 
