@@ -51,8 +51,9 @@ local CONFIG = {
 	notchRadius = 12,
 	infoRowHeight = 26,
 	trayHeight = 94,
+	-- the strip under the shut bar that the arrow sits in, and the gap the row keeps
+	-- above itself: the two are the same number, so the text is centred in the band
 	chevronHeight = 14,
-	chevronArrowInset = 8,
 
 	cellWidth = 76,
 	cellHeight = 38,
@@ -83,9 +84,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.4b",
+	runningVersion = "1.4c",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.4b",
+	versionFallback = "1.4c",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -465,8 +466,14 @@ track(GuiService:GetPropertyChangedSignal("PreferredTransparency"):Connect(apply
 -- the notch
 ----------------------------------------------------------------------
 
-local openHeight = CONFIG.infoRowHeight + CONFIG.trayHeight + CONFIG.chevronHeight
-local closedHeight = CONFIG.infoRowHeight + CONFIG.chevronHeight
+-- The notch runs above the top edge of the screen, so its own middle is not the middle
+-- of what a person sees: the shut bar is the part below the edge. The row therefore sits
+-- halfway down THAT band, with the gap above it equal to the strip below it, which puts
+-- the line's centre on the band's centre by construction rather than by an eyeballed
+-- offset. It costs 7px of height that used to be empty above the text.
+local infoTop = CONFIG.chevronHeight / 2
+local openHeight = infoTop + CONFIG.infoRowHeight + CONFIG.trayHeight + CONFIG.chevronHeight
+local closedHeight = infoTop + CONFIG.infoRowHeight + CONFIG.chevronHeight / 2
 
 -- the cluster is exactly as wide as the notch, so the FPS and Ping boxes hug its edges
 -- and slide with it when the tray opens or closes
@@ -503,6 +510,7 @@ local bar = make("Frame", {
 local infoRow = make("Frame", {
 	Name = "Info",
 	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, infoTop),
 	Size = UDim2.new(1, 0, 0, CONFIG.infoRowHeight),
 }, bar)
 
@@ -608,7 +616,7 @@ end))
 local tray = make("Frame", {
 	Name = "Tray",
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, CONFIG.infoRowHeight),
+	Position = UDim2.fromOffset(0, infoTop + CONFIG.infoRowHeight),
 	Size = UDim2.new(1, 0, 0, CONFIG.trayHeight),
 	Visible = CONFIG.startOpen,
 }, bar)
@@ -735,12 +743,15 @@ end
 
 paintTray()
 
--- the chevron is a full-width strip along the bottom of the notch, so the arrow can
--- sit at the right edge with the info row's text staying centred above it
+-- the chevron is a full-width strip that sits under the shut bar's text, and under the
+-- tray when the notch is open. The arrow is centred in it, both ways.
 local chevron = make("TextButton", {
 	Name = "Chevron",
 	AnchorPoint = Vector2.new(0, 0),
-	Position = UDim2.fromOffset(0, CONFIG.infoRowHeight),
+	Position = UDim2.fromOffset(
+		0,
+		CONFIG.startOpen and (infoTop + CONFIG.infoRowHeight + CONFIG.trayHeight) or (closedHeight - CONFIG.chevronHeight)
+	),
 	Size = UDim2.new(1, 0, 0, CONFIG.chevronHeight),
 	BackgroundTransparency = 1,
 	AutoButtonColor = false,
@@ -750,9 +761,9 @@ local chevron = make("TextButton", {
 
 local chevronPlate = make("Frame", {
 	Name = "Plate",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -8, 0.5, 0),
-	Size = UDim2.fromOffset(34, CONFIG.chevronHeight),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 0),
+	Size = UDim2.fromOffset(40, CONFIG.chevronHeight - 2),
 	BackgroundColor3 = CONFIG.colour.buttonFill,
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
@@ -762,8 +773,8 @@ corner(chevronPlate, 7)
 
 local arrow = make("Frame", {
 	Name = "Arrow",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -CONFIG.chevronArrowInset, 0.5, 0),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 0),
 	Size = UDim2.fromOffset(13, 8),
 	BackgroundTransparency = 1,
 	ZIndex = 6,
@@ -828,7 +839,12 @@ local function moveShape(open)
 		),
 	})
 	tween(chevron, motionInfo(0.2), {
-		Position = UDim2.new(0, 0, 0, open and (CONFIG.infoRowHeight + CONFIG.trayHeight) or CONFIG.infoRowHeight),
+		Position = UDim2.new(
+			0,
+			0,
+			0,
+			open and (infoTop + CONFIG.infoRowHeight + CONFIG.trayHeight) or (closedHeight - CONFIG.chevronHeight)
+		),
 	})
 	-- closed the arrow points down, into the tray; open it flips up, back to the bar
 	tween(arrow, motionInfo(0.2), { Rotation = open and 0 or 180 })
@@ -1500,35 +1516,60 @@ end
 -- does the orb. A row is a person in the server. When the game keeps leaderstats the
 -- right hand column shows that value (a time, a score, a rank name) and the panel is
 -- the wide one; a game that keeps none gets the narrow layout with no column at all.
-local PLAYER_ROW_HEIGHT = 32
-local PLAYER_ROW_GAP = 4
-local PLAYER_VISIBLE_ROWS = 8
-local PLAYER_PAD = 8
-local PLAYER_TITLE_HEIGHT = 24
-local PLAYER_HEADER_HEIGHT = 32
-local PLAYER_ELEMENT_WIDTH = 58
-local PLAYER_PANEL_NARROW = 206
-local PLAYER_PANEL_WIDE = 264
+-- The panel is a size you can drag, and everything inside it is drawn from one number:
+-- the scale. A wider panel is not just a wider box, it is a bigger one, so the names,
+-- the faces, the row heights and the gaps all grow with it. Dragging the grip changes
+-- the width (which is the scale) and the height (which is how many rows show).
+local PL_TITLE_HEIGHT = 24
+local PL_BASE_WIDTH = 206
+local PL_MIN_WIDTH = 172
+local PL_MAX_WIDTH = 460
+local PL_PAD = 8
+local PL_BASE_ROW = 32
+local PL_BASE_GAP = 6
+local PL_MIN_ROWS = 3
+local PL_MAX_ROWS = 14
+local PL_GRIP = 16
+-- the strip kept clear on the right for the scrollbar, so the rows stop short of the
+-- border instead of running over it
+local PL_SCROLL_SPACE = 6
 
-local PLAYER_PANEL_HEIGHT = PLAYER_TITLE_HEIGHT
-	+ 4
-	+ PLAYER_HEADER_HEIGHT
-	+ 4
-	+ PLAYER_VISIBLE_ROWS * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP)
-	+ PLAYER_PAD
+local playerScale = 1
+local playerRowsWanted = 8
 
--- the panel is only as tall as the people in it, up to the eight rows it shows; a
--- server of one is one row, not eight empty slots, and past eight it scrolls
-local function playerPanelHeight(rowCount)
-	local rows = math.clamp(rowCount, 3, PLAYER_VISIBLE_ROWS)
-	return PLAYER_TITLE_HEIGHT + 4 + PLAYER_HEADER_HEIGHT + 4 + rows * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP) + PLAYER_PAD
+-- every measurement the list draws with, from that one scale
+local function plMetrics()
+	local scale = playerScale
+	return {
+		scale = scale,
+		row = math.max(20, math.floor(PL_BASE_ROW * scale + 0.5)),
+		gap = math.max(2, math.floor(PL_BASE_GAP * scale + 0.5)),
+		avatar = math.max(12, math.floor(20 * scale + 0.5)),
+		name = math.max(9, math.floor(12 * scale + 0.5)),
+		handle = math.max(8, math.floor(10 * scale + 0.5)),
+		element = math.max(36, math.floor(58 * scale + 0.5)),
+		pad = math.max(5, math.floor(PL_PAD * scale + 0.5)),
+	}
 end
+
+local function plWidth()
+	return math.floor(PL_BASE_WIDTH * playerScale + 0.5)
+end
+
+-- only as tall as the people in it, up to the rows it shows; a server of one is one
+-- row and a floor of three, so the panel never collapses to a stub
+local function plHeight(rows, m)
+	rows = math.clamp(rows, PL_MIN_ROWS, PL_MAX_ROWS)
+	return PL_TITLE_HEIGHT + m.pad + rows * (m.row + m.gap) - m.gap + m.pad
+end
+
+local playerListHome = UDim2.new(1, -CONFIG.orbMargin, 0, CONFIG.orbTop + CONFIG.orbSize + 6)
 
 local playerList = panelled(make("Frame", {
 	Name = "PlayerList",
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -CONFIG.orbMargin, 0, CONFIG.orbTop + CONFIG.orbSize + 6),
-	Size = UDim2.fromOffset(PLAYER_PANEL_NARROW, PLAYER_PANEL_HEIGHT),
+	Position = playerListHome,
+	Size = UDim2.fromOffset(PL_BASE_WIDTH, plHeight(8, plMetrics())),
 	BackgroundColor3 = CONFIG.colour.background,
 	ClipsDescendants = true,
 	Visible = false,
@@ -1540,7 +1581,7 @@ playerList.Parent = gui
 
 local playerTitlePlate = make("Frame", {
 	Name = "TitlePlate",
-	Size = UDim2.new(1, 0, 0, PLAYER_TITLE_HEIGHT),
+	Size = UDim2.new(1, 0, 0, PL_TITLE_HEIGHT),
 	BackgroundColor3 = CONFIG.colour.backgroundTop,
 	BorderSizePixel = 0,
 	ZIndex = 13,
@@ -1556,46 +1597,12 @@ label(playerTitlePlate, {
 	ZIndex = 14,
 })
 
-local playerHeader = make("Frame", {
-	Name = "Header",
-	Position = UDim2.fromOffset(PLAYER_PAD, PLAYER_TITLE_HEIGHT + 4),
-	Size = UDim2.new(1, -PLAYER_PAD * 2, 0, PLAYER_HEADER_HEIGHT),
-	BackgroundTransparency = 1,
-	ZIndex = 13,
-}, playerList)
-
--- the header carries no caption row: the name columns are self-evident, and the
--- avatar box belongs beside each person's own name, not up here on its own. The only
--- captions left are the two over the element column, which a game may not have at all.
-local elementTitle = label(playerHeader, {
-	Name = "ElementHeader",
-	Text = "Element",
-	TextSize = 11,
-	TextColor3 = CONFIG.colour.red,
-	TextXAlignment = Enum.TextXAlignment.Right,
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, 0, 0, 3),
-	Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH, 13),
-	Visible = false,
-	ZIndex = 14,
-})
-local elementSubTitle = label(playerHeader, {
-	Name = "NumberHeader",
-	Text = "Number",
-	TextSize = 11,
-	TextColor3 = CONFIG.colour.red,
-	TextXAlignment = Enum.TextXAlignment.Right,
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, 0, 0, 16),
-	Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH, 13),
-	Visible = false,
-	ZIndex = 14,
-})
-
+-- the list itself: inset from every edge, so the whole area a person sees sits inside
+-- the border rather than on top of it
 local playerRows = make("ScrollingFrame", {
 	Name = "Rows",
-	Position = UDim2.fromOffset(PLAYER_PAD, PLAYER_TITLE_HEIGHT + 4 + PLAYER_HEADER_HEIGHT + 4),
-	Size = UDim2.new(1, -PLAYER_PAD * 2, 0, PLAYER_VISIBLE_ROWS * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP)),
+	Position = UDim2.fromOffset(PL_PAD, PL_TITLE_HEIGHT + PL_PAD),
+	Size = UDim2.new(1, -(PL_PAD * 2 + PL_SCROLL_SPACE), 1, -(PL_TITLE_HEIGHT + PL_PAD * 2)),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 3,
@@ -1608,9 +1615,33 @@ local playerRows = make("ScrollingFrame", {
 }, playerList)
 
 make("UIListLayout", {
-	Padding = UDim.new(0, PLAYER_ROW_GAP),
+	Padding = UDim.new(0, PL_BASE_GAP),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, playerRows)
+
+-- the grip: a corner mark that says the panel can be dragged, and the drag itself
+local playerGrip = make("TextButton", {
+	Name = "Resize",
+	Text = "",
+	AutoButtonColor = false,
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -2, 1, -2),
+	Size = UDim2.fromOffset(PL_GRIP, PL_GRIP),
+	ZIndex = 15,
+}, playerList)
+for index = 1, 2 do
+	make("Frame", {
+		Name = "Mark",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -4 - (index - 1) * 5, 1, -4 - (index - 1) * 5),
+		Size = UDim2.fromOffset(7, 1),
+		Rotation = -45,
+		BackgroundColor3 = CONFIG.colour.dim,
+		BorderSizePixel = 0,
+		ZIndex = 16,
+	}, playerGrip)
+end
 
 -- the first leaderstat is the game's own counter: a time, a score, a rank name
 local function playerElement(target)
@@ -1799,20 +1830,76 @@ local function openPlayerMenu(target, row)
 end
 
 local elementLabels = {}
+-- every row's parts, kept so a drag can re-measure what is already on screen instead
+-- of destroying the list and building it again on every mouse movement
+local playerRowParts = {}
 
 local function clearPlayerRows()
 	for _, child in ipairs(playerRows:GetChildren()) do
-		if child:IsA("TextButton") then
+		if child:IsA("TextButton") and child.Name ~= "Resize" then
 			child:Destroy()
 		end
 	end
+	playerRowParts = {}
 	elementLabels = {}
+end
+
+-- puts the panel, and everything already inside it, at the current scale. Called on
+-- every frame of a drag, so it only writes numbers: no instancing, no thumbnails.
+local function applyPlayerLayout()
+	local m = plMetrics()
+	local rows = math.clamp(#playerRowParts, PL_MIN_ROWS, playerRowsWanted)
+	playerList.Size = UDim2.fromOffset(plWidth(), plHeight(rows, m))
+
+	playerRows.Position = UDim2.fromOffset(m.pad, PL_TITLE_HEIGHT + m.pad)
+	playerRows.Size = UDim2.new(1, -(m.pad * 2 + PL_SCROLL_SPACE), 1, -(PL_TITLE_HEIGHT + m.pad * 2))
+
+	local layout = playerRows:FindFirstChildOfClass("UIListLayout")
+	if layout then
+		layout.Padding = UDim.new(0, m.gap)
+	end
+
+	local nameHeight = math.ceil(m.name * 1.3)
+	local handleHeight = math.ceil(m.handle * 1.3)
+	for _, parts in ipairs(playerRowParts) do
+		local row = parts.row
+		if row.Parent then
+			local textX = m.pad * 2 + m.avatar
+			local top = math.max(1, math.floor((m.row - nameHeight - handleHeight) / 2))
+			local reserve = m.pad + (parts.element and m.element or 0)
+			row.Size = UDim2.new(1, 0, 0, m.row)
+
+			parts.avatar.Position = UDim2.fromOffset(m.pad, math.floor((m.row - m.avatar) / 2))
+			parts.avatar.Size = UDim2.fromOffset(m.avatar, m.avatar)
+
+			parts.name.TextSize = m.name
+			parts.name.Position = UDim2.fromOffset(textX, top)
+			parts.name.Size = UDim2.new(1, -(textX + reserve), 0, nameHeight)
+
+			parts.handle.TextSize = m.handle
+			parts.handle.Position = UDim2.fromOffset(textX, top + nameHeight)
+			parts.handle.Size = UDim2.new(1, -(textX + reserve), 0, handleHeight)
+
+			if parts.element then
+				parts.element.TextSize = math.max(8, math.floor(11 * m.scale + 0.5))
+				parts.element.Position = UDim2.new(1, -m.pad, 0, top)
+				parts.element.Size = UDim2.fromOffset(m.element - m.pad, nameHeight + handleHeight)
+			end
+		end
+	end
 end
 
 local function rebuildPlayerRows()
 	local people = Players:GetPlayers()
+	-- alphabetical by the name a person reads, which is the display name; two people
+	-- who share one fall back to the username, so the order never shuffles
 	table.sort(people, function(a, b)
-		return string.lower(a.Name) < string.lower(b.Name)
+		local an = string.lower(tostring(a.DisplayName or a.Name))
+		local bn = string.lower(tostring(b.DisplayName or b.Name))
+		if an == bn then
+			return string.lower(a.Name) < string.lower(b.Name)
+		end
+		return an < bn
 	end)
 
 	local wide = false
@@ -1823,13 +1910,10 @@ local function rebuildPlayerRows()
 		end
 	end
 
-	playerList.Size = UDim2.fromOffset(wide and PLAYER_PANEL_WIDE or PLAYER_PANEL_NARROW, playerPanelHeight(#people))
-	playerRows.Size = UDim2.new(1, -PLAYER_PAD * 2, 0, math.clamp(#people, 3, PLAYER_VISIBLE_ROWS) * (PLAYER_ROW_HEIGHT + PLAYER_ROW_GAP))
-	elementTitle.Visible = wide
-	elementSubTitle.Visible = wide
 	clearPlayerRows()
 
 	for index, target in ipairs(people) do
+		local m = plMetrics()
 		local row = make("TextButton", {
 			Name = "Row_" .. tostring(target.UserId),
 			Text = "",
@@ -1837,7 +1921,7 @@ local function rebuildPlayerRows()
 			BackgroundColor3 = CONFIG.colour.backgroundTop,
 			BackgroundTransparency = 0.55,
 			BorderSizePixel = 0,
-			Size = UDim2.new(1, 0, 0, PLAYER_ROW_HEIGHT),
+			Size = UDim2.new(1, 0, 0, m.row),
 			LayoutOrder = index,
 			ZIndex = 14,
 		}, playerRows)
@@ -1865,27 +1949,30 @@ local function rebuildPlayerRows()
 			end
 		end)
 
-		local inset = 34 + (wide and PLAYER_ELEMENT_WIDTH or 0)
-		label(row, {
+		local nameLabel = label(row, {
 			Name = "Display",
 			Text = target.DisplayName,
 			TextSize = 12,
 			TextColor3 = CONFIG.colour.text,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Position = UDim2.fromOffset(32, 3),
-			Size = UDim2.new(1, -inset, 0, 13),
+			Size = UDim2.new(1, -34, 0, 13),
 			ZIndex = 15,
 		})
-		label(row, {
+		local handleLabel = label(row, {
 			Name = "HandleLine",
 			Text = "@" .. target.Name,
 			TextSize = 10,
 			TextColor3 = CONFIG.colour.dim,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Position = UDim2.fromOffset(32, 16),
-			Size = UDim2.new(1, -inset, 0, 12),
+			Size = UDim2.new(1, -34, 0, 12),
 			ZIndex = 15,
 		})
+
+		local parts = { row = row, avatar = face, name = nameLabel, handle = handleLabel }
 
 		if wide then
 			local element = label(row, {
@@ -1896,11 +1983,14 @@ local function rebuildPlayerRows()
 				TextXAlignment = Enum.TextXAlignment.Right,
 				AnchorPoint = Vector2.new(1, 0),
 				Position = UDim2.new(1, -8, 0, 9),
-				Size = UDim2.fromOffset(PLAYER_ELEMENT_WIDTH - 8, 14),
+				Size = UDim2.fromOffset(58 - 8, 14),
 				ZIndex = 15,
 			})
 			elementLabels[target.UserId] = element
+			parts.element = element
 		end
+
+		table.insert(playerRowParts, parts)
 
 		-- these live and die with the row, so they are not tracked: destroying the row
 		-- disconnects them, and a rebuild would otherwise stack one set per second
@@ -1919,15 +2009,82 @@ local function rebuildPlayerRows()
 			openPlayerMenu(target, row)
 		end)
 	end
+
+	applyPlayerLayout()
+end
+
+-- dragging the grip: width is the scale, height is how many rows show. The panel is
+-- anchored at its top right corner, so pulling the grip left and down makes it bigger.
+local dragState = nil
+
+track(playerGrip.InputBegan:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	closePlayerMenu()
+	dragState = {
+		x = input.Position.X,
+		y = input.Position.Y,
+		width = plWidth(),
+		height = playerList.Size.Y.Offset,
+	}
+end))
+
+track(UserInputService.InputChanged:Connect(function(input)
+	if not dragState then
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement
+		and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	local width = math.clamp(dragState.width - (input.Position.X - dragState.x), PL_MIN_WIDTH, PL_MAX_WIDTH)
+	playerScale = width / PL_BASE_WIDTH
+	local m = plMetrics()
+	local rows = math.floor((dragState.height + (input.Position.Y - dragState.y) - PL_TITLE_HEIGHT - m.pad * 2 + m.gap)
+		/ (m.row + m.gap) + 0.5)
+	playerRowsWanted = math.clamp(rows, PL_MIN_ROWS, PL_MAX_ROWS)
+	applyPlayerLayout()
+end))
+
+track(UserInputService.InputEnded:Connect(function(input)
+	if not dragState then
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1
+		and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	dragState = nil
+	rebuildPlayerRows()
+end))
+
+-- the panel slides in from the right edge and back out to it; a new open or close
+-- takes over from the one in flight instead of fighting it
+local playerSlideToken = 0
+
+local function playerOffscreen()
+	return UDim2.new(1, -CONFIG.orbMargin + plWidth() + 12, 0, playerListHome.Y.Offset)
 end
 
 local function setPlayerListOpen(open)
 	open = not not open
-	playerList.Visible = open
+	playerSlideToken += 1
+	local token = playerSlideToken
 	if open then
 		rebuildPlayerRows()
+		playerList.Visible = true
+		playerList.Position = playerOffscreen()
+		tween(playerList, motionInfo(0.24), { Position = playerListHome })
 	else
 		closePlayerMenu()
+		tween(playerList, motionInfo(0.18), { Position = playerOffscreen() })
+		task.delay(0.2, function()
+			if token == playerSlideToken then
+				playerList.Visible = false
+			end
+		end)
 	end
 end
 
