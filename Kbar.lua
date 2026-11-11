@@ -1,13 +1,13 @@
 --!nonstrict
 --[[
-	Kbar 1.4d — a client-side notch bar for Roblox.
+	Kbar 1.4.1 — a client-side notch bar for Roblox.
 
 	-- the ?t= is the cache buster: a plain URL can hand back the copy GitHub's CDN
 	-- cached before the last push, which is how a fresh execute starts an old bar
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua?t=" .. os.time()))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.4d      tag and version come from Ver.txt
+		Indev | 12:00 | 1.4.1      tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
@@ -84,9 +84,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.4d",
+	runningVersion = "1.4.1",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.4d",
+	versionFallback = "1.4.1",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
