@@ -1,0 +1,17 @@
+# Kbar v1.5
+
+[added]
+
+[+] update prompt shows these notes before you take the update
+[+] update prompt scrolls when the notes run long
+[+] health bar walks green to yellow to orange to red as health drops, and back as it heals
+[+] thicker border on the health bar, with the fill kept clear of it
+[+] white outline behind the red cross beside the health bar
+[+] K-Playerlist drags sideways or up and down, one at a time, never both
+[+] second leaderstat on a playerlist row, read as "Sparkles 7" so the column says what it is
+[+] bigger FPS and Ping numbers in shorter boxes
+[+] even spacing around the K button
+
+[removed]
+
+[-] the Notify button on the K strip, now called Placeholder

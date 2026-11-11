@@ -1,13 +1,13 @@
 --!nonstrict
 --[[
-	Kbar 1.4.1 — a client-side notch bar for Roblox.
+	Kbar 1.5 — a client-side notch bar for Roblox.
 
 	-- the ?t= is the cache buster: a plain URL can hand back the copy GitHub's CDN
 	-- cached before the last push, which is how a fresh execute starts an old bar
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/Kttyz/Kbar/main/Kbar.lua?t=" .. os.time()))()
 
 	Top centre, flush with the screen edge:
-		Indev | 12:00 | 1.4.1      tag and version come from Ver.txt
+		Indev | 12:00 | 1.5        tag and version come from Ver.txt
 		the tray, four across: FPS Display, LSSR SW, Free Camera, Ping Display,
 		                       Load Inf Yield, KHub, Anim Changer, Click 2 MEOW!
 		the arrow, inside the box, bottom right of whatever is showing
@@ -18,17 +18,19 @@
 	Left and right of the notch: the FPS and Ping readouts, off until toggled on.
 	Top right: the person orb, the health bar and its red cross, and the K button.
 	Tab, or the orb, opens K-Playerlist: the people in the server, the game's own
-	leaderstat down the right hand column when it keeps one, and a row that opens
+	leaderstats down the right hand columns when it keeps them (the first as a bare
+	value, the second with its own name in front of it), and a row that opens
 	Friend request / Examine Avatar / Block / Report Abuse. Roblox's own list is off.
-	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Notify.
+	The K strip slides out to the left of the K button: ALOG, SHOP, Exit, Placeholder.
 	It slides out empty, fades its labels in only once it is fully open, and on the
 	way back it fades them out fast before the strip itself closes.
 	The notch's own tray fades the same way, in behind the opening and out fast
 	before it closes.
 
 	When Ver.txt holds a number newer than this file, a prompt asks whether to
-	update. Update drops this copy and runs the file at updateUrl; Deny keeps this
-	copy for the rest of the game and the prompt never returns.
+	update and shows what changed, read from clog.txt, in a panel that scrolls once
+	the notes run long. Update drops this copy and runs the file at updateUrl; Deny
+	keeps this copy for the rest of the game and the prompt never returns.
 
 	Chat commands, prefix k-: k-hop, k-alog, k-lssrsw, k-fc, k-iy, k-anim, k-hub.
 	Type one in the chat box and it runs.
@@ -38,6 +40,9 @@
 
 local CONFIG = {
 	verUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Ver.txt",
+	-- what changed in the version Ver.txt is offering. Read only when the update
+	-- prompt opens, so the 60 second version poll never pays for it.
+	clogUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/clog.txt",
 	verRefresh = 60,
 	statRefresh = 0.5,
 
@@ -61,9 +66,17 @@ local CONFIG = {
 
 	sideBoxWidth = 92,
 	sideBoxGap = 8,
+	-- the FPS and Ping numbers read at 17, a step up from the info line, inside a box
+	-- 6px shorter than the shut bar: the number matters more than the box it sits in
+	sideValueTextSize = 17,
+	sideBoxShorten = 6,
 
 	barWidth = 152,
 	barHeight = 12,
+	-- the border around the bar, and how far the fill keeps clear of it, so the bar
+	-- reads as a well with an edge rather than a painted stripe
+	barBorder = 3,
+	barPadding = 2,
 	crossSize = 15,
 	orbSize = 34,
 	keySize = 34,
@@ -71,7 +84,9 @@ local CONFIG = {
 	orbTop = 7,
 	hideDefaultHealth = true,
 
-	menuStripHeight = 42,
+	-- 34 key plus 6 of padding above and below: an odd pill height is what left the
+	-- K sitting 4px from the top and bottom and 6px from the sides
+	menuStripHeight = 46,
 	menuStripKey = 34,
 	menuStripButton = 62,
 	menuStripButtonHeight = 34,
@@ -84,9 +99,9 @@ local CONFIG = {
 
 	-- what this file is. Ver.txt is compared against it, and a newer number
 	-- there is what puts the update prompt on screen
-	runningVersion = "1.4.1",
+	runningVersion = "1.5",
 	-- shown until Ver.txt answers; never a placeholder
-	versionFallback = "1.4.1",
+	versionFallback = "1.5",
 	updateUrl = "https://raw.githubusercontent.com/Kttyz/Kbar/refs/heads/main/Kbar.lua",
 	-- the tray fades like the K strip does, so nothing pops in at the end
 	trayFadeIn = 0.16,
@@ -921,13 +936,13 @@ end))
 -- the fps and ping readouts, flanking the notch
 ----------------------------------------------------------------------
 
--- the FPS and Ping boxes are exactly as tall as the closed bar, so their bottom
--- edge lines up with the notch instead of stopping short of it
-local SIDE_BOX_HEIGHT = CONFIG.infoRowHeight + CONFIG.chevronHeight + CONFIG.notchRadius
-local SIDE_TITLE_TOP = CONFIG.notchRadius + 2
+-- the FPS and Ping boxes sit just short of the shut bar's bottom edge: the number got
+-- bigger and the box got shorter, so this is 6px less tall than the bar it flanks
+local SIDE_BOX_HEIGHT = CONFIG.infoRowHeight + CONFIG.chevronHeight + CONFIG.notchRadius - CONFIG.sideBoxShorten
+local SIDE_TITLE_TOP = CONFIG.notchRadius
 local SIDE_TITLE_HEIGHT = 10
 local SIDE_VALUE_TOP = SIDE_TITLE_TOP + SIDE_TITLE_HEIGHT + 1
-local SIDE_VALUE_HEIGHT = SIDE_BOX_HEIGHT - SIDE_VALUE_TOP - 1
+local SIDE_VALUE_HEIGHT = SIDE_BOX_HEIGHT - SIDE_VALUE_TOP
 
 local function sideBox(name, title, side)
 	local frame = panelled(make("Frame", {
@@ -959,7 +974,7 @@ local function sideBox(name, title, side)
 	local value = label(frame, {
 		Name = "Value",
 		Text = "0",
-		TextSize = CONFIG.textSize,
+		TextSize = CONFIG.sideValueTextSize,
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, SIDE_VALUE_TOP),
 		Size = UDim2.new(1, -8, 0, SIDE_VALUE_HEIGHT),
@@ -986,7 +1001,9 @@ local barRight = orbRight + CONFIG.orbSize + 10
 local barLeft = barRight + CONFIG.barWidth
 local crossRight = barLeft + 8
 local crossLeft = crossRight + CONFIG.crossSize
-local keyRight = crossLeft + 10
+-- 6, the same gap the strip keeps inside itself, so the K reads as evenly spaced from
+-- the cross as it is from the pill's own edge
+local keyRight = crossLeft + 6
 
 local healthBar = panelled(make("Frame", {
 	Name = "Health",
@@ -997,8 +1014,17 @@ local healthBar = panelled(make("Frame", {
 	ClipsDescendants = true,
 	ZIndex = 3,
 }), 0)
-stroke(healthBar, CONFIG.colour.edge, CONFIG.strokeThickness, 0.35)
+stroke(healthBar, CONFIG.colour.edge, CONFIG.barBorder, 0.35)
 healthBar.Parent = gui
+
+-- the fill keeps clear of the border on every side, so the border reads as a rim
+-- around the bar instead of a line drawn on top of the fill's own edge
+make("UIPadding", {
+	PaddingTop = UDim.new(0, CONFIG.barPadding),
+	PaddingBottom = UDim.new(0, CONFIG.barPadding),
+	PaddingLeft = UDim.new(0, CONFIG.barPadding),
+	PaddingRight = UDim.new(0, CONFIG.barPadding),
+}, healthBar)
 
 local healthFill = make("Frame", {
 	Name = "Fill",
@@ -1007,6 +1033,32 @@ local healthFill = make("Frame", {
 	BorderSizePixel = 0,
 	ZIndex = 4,
 }, healthBar)
+
+-- The fill's colour is read off the fraction it shows: full health is green, and
+-- every point lost walks the bar down through greenish yellow, yellow and orange to
+-- red. One ramp, read in one place, so a gain walks it back up the same way.
+local HEALTH_RAMP = {
+	{ at = 0.00, colour = Color3.fromRGB(226, 62, 50) },
+	{ at = 0.25, colour = Color3.fromRGB(245, 130, 40) },
+	{ at = 0.50, colour = Color3.fromRGB(240, 208, 60) },
+	{ at = 0.68, colour = Color3.fromRGB(188, 219, 74) },
+	{ at = 1.00, colour = Color3.fromRGB(88, 214, 120) },
+}
+
+local function healthColour(fraction)
+	fraction = math.clamp(fraction, 0, 1)
+	local lower = HEALTH_RAMP[1]
+	for index = 2, #HEALTH_RAMP do
+		local upper = HEALTH_RAMP[index]
+		if fraction <= upper.at then
+			local span = upper.at - lower.at
+			local alpha = span > 0 and (fraction - lower.at) / span or 0
+			return lower.colour:Lerp(upper.colour, alpha)
+		end
+		lower = upper
+	end
+	return HEALTH_RAMP[#HEALTH_RAMP].colour
+end
 
 -- the red cross sits just left of the bar
 local cross = make("Frame", {
@@ -1017,6 +1069,27 @@ local cross = make("Frame", {
 	BackgroundTransparency = 1,
 	ZIndex = 3,
 }, gui)
+
+-- a white plus sits behind the red one, 2px larger on every side, so the cross reads
+-- as a red shape with a white edge instead of a shape that vanishes against the sky
+make("Frame", {
+	Name = "OutlineVertical",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(0.34, 4, 1, 4),
+	BackgroundColor3 = CONFIG.colour.buttonFill,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, cross)
+make("Frame", {
+	Name = "OutlineHorizontal",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, 4, 0.34, 4),
+	BackgroundColor3 = CONFIG.colour.buttonFill,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, cross)
 
 make("Frame", {
 	Name = "Vertical",
@@ -1118,6 +1191,7 @@ local function bindHealth(character)
 		local maxHealth = math.max(humanoid.MaxHealth, 1)
 		local fraction = math.clamp(humanoid.Health / maxHealth, 0, 1)
 		healthFill.Size = UDim2.fromScale(fraction, 1)
+		healthFill.BackgroundColor3 = healthColour(fraction)
 	end
 	update()
 	healthConnection = humanoid.HealthChanged:Connect(update)
@@ -1141,12 +1215,26 @@ local STRIP = {
 	{ id = "alog", text = "ALOG" },
 	{ id = "hop", text = "SHOP" },
 	{ id = "exit", text = "Exit" },
-	{ id = "notify", text = "Notify" },
+	{ id = "placeholder", text = "Placeholder" },
 }
 
 -- closed, the pill is the K alone; open, it is the K plus every button
 local stripClosedWidth = CONFIG.menuStripPadding * 2 + CONFIG.menuStripKey
-local stripOpenWidth = stripClosedWidth + #STRIP * (CONFIG.menuStripButton + CONFIG.menuStripGap)
+
+-- A button is as wide as its own word needs, never narrower than the base width: a
+-- one-word label like Placeholder is longer than the three-letter ones beside it, and
+-- squeezing it into the same 62px would push the word out over its neighbour. Roboto
+-- Mono bold at 14 is a shade under 8.4px a character.
+local function stripWidthFor(text)
+	return math.max(CONFIG.menuStripButton, math.ceil(#text * 8.4) + 12)
+end
+
+local stripWidths = {}
+local stripOpenWidth = stripClosedWidth
+for index, entry in ipairs(STRIP) do
+	stripWidths[index] = stripWidthFor(entry.text)
+	stripOpenWidth += stripWidths[index] + CONFIG.menuStripGap
+end
 
 -- where a button sits, measured from the pill's right edge at the open width. That
 -- number never changes: the right edge is pinned, so growing the pill leftward
@@ -1154,8 +1242,8 @@ local stripOpenWidth = stripClosedWidth + #STRIP * (CONFIG.menuStripButton + CON
 -- four of them every frame the width moved, which is the squirming this removes.
 local function buttonOffsetFromRight(index)
 	local offset = CONFIG.menuStripPadding
-	for _ = index + 1, #STRIP do
-		offset += CONFIG.menuStripButton + CONFIG.menuStripGap
+	for other = index + 1, #STRIP do
+		offset += stripWidths[other] + CONFIG.menuStripGap
 	end
 	return offset
 end
@@ -1263,7 +1351,7 @@ for index, entry in ipairs(STRIP) do
 		-- open: the growing pill uncovers it there, it never slides or squashes
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -buttonOffsetFromRight(index), 0.5, 0),
-		Size = UDim2.fromOffset(CONFIG.menuStripButton, CONFIG.menuStripButtonHeight),
+		Size = UDim2.fromOffset(stripWidths[index], CONFIG.menuStripButtonHeight),
 		-- hidden while the pill is shut: the rightmost button's box reaches into
 		-- the closed pill and would eat clicks meant for the K
 		Visible = false,
@@ -1514,12 +1602,14 @@ end
 
 -- Roblox's own list is turned off and this one takes its place; Tab opens it, and so
 -- does the orb. A row is a person in the server. When the game keeps leaderstats the
--- right hand column shows that value (a time, a score, a rank name) and the panel is
--- the wide one; a game that keeps none gets the narrow layout with no column at all.
+-- right hand columns show those values, the first as a bare number and the second with
+-- its own name in front of it, and the panel is the wide one; a game that keeps none
+-- gets the narrow layout with no column at all.
 -- The panel is a size you can drag, and everything inside it is drawn from one number:
 -- the scale. A wider panel is not just a wider box, it is a bigger one, so the names,
--- the faces, the row heights and the gaps all grow with it. Dragging the grip changes
--- the width (which is the scale) and the height (which is how many rows show).
+-- the faces, the row heights and the gaps all grow with it. Dragging the grip moves one
+-- axis at a time: sideways changes the width (which is the scale), up and down changes
+-- how many rows show.
 local PL_TITLE_HEIGHT = 24
 local PL_BASE_WIDTH = 206
 local PL_MIN_WIDTH = 172
@@ -1530,6 +1620,9 @@ local PL_BASE_GAP = 6
 local PL_MIN_ROWS = 3
 local PL_MAX_ROWS = 14
 local PL_GRIP = 16
+-- how far the pointer has to travel before the drag picks a direction. Until it does,
+-- nothing moves, so a pull that was meant to be straight down never nudges the width.
+local PL_DRAG_LOCK = 3
 -- the strip kept clear on the right for the scrollbar, so the rows stop short of the
 -- border instead of running over it
 local PL_SCROLL_SPACE = 6
@@ -1548,6 +1641,9 @@ local function plMetrics()
 		name = math.max(9, math.floor(12 * scale + 0.5)),
 		handle = math.max(8, math.floor(10 * scale + 0.5)),
 		element = math.max(36, math.floor(58 * scale + 0.5)),
+		-- the second column carries its own name, so it needs room for the word as well
+		-- as the number: "Sparkles 7" is a wider thing than "7"
+		element2 = math.max(56, math.floor(96 * scale + 0.5)),
 		pad = math.max(5, math.floor(PL_PAD * scale + 0.5)),
 	}
 end
@@ -1643,24 +1739,31 @@ for index = 1, 2 do
 	}, playerGrip)
 end
 
--- the first leaderstat is the game's own counter: a time, a score, a rank name
-local function playerElement(target)
+-- The game's own counters, in the order the game made them. A row shows one or two:
+-- the first as a bare value at the right edge, the second one step left with its own
+-- name in front of it, so a column reading "7" and a column reading "Sparkles 7" say
+-- different things instead of both being a number with no label.
+local function playerElements(target)
 	local stats = target:FindFirstChild("leaderstats")
 	if not stats then
-		return nil
+		return {}
 	end
+	local found = {}
 	for _, child in ipairs(stats:GetChildren()) do
+		if found[1] and found[2] then
+			break
+		end
 		local kind = child.ClassName
 		if kind == "IntValue" or kind == "NumberValue" or kind == "StringValue" or kind == "BoolValue" then
 			local ok, value = pcall(function()
 				return child.Value
 			end)
 			if ok and value ~= nil then
-				return tostring(value)
+				table.insert(found, { name = child.Name, value = tostring(value) })
 			end
 		end
 	end
-	return nil
+	return found
 end
 
 -- the menu a row opens: the same four things Roblox's own list offers, drawn here
@@ -1867,6 +1970,7 @@ local function applyPlayerLayout()
 			local textX = m.pad * 2 + m.avatar
 			local top = math.max(1, math.floor((m.row - nameHeight - handleHeight) / 2))
 			local reserve = m.pad + (parts.element and m.element or 0)
+				+ (parts.element2 and m.element2 or 0)
 			row.Size = UDim2.new(1, 0, 0, m.row)
 
 			parts.avatar.Position = UDim2.fromOffset(m.pad, math.floor((m.row - m.avatar) / 2))
@@ -1884,6 +1988,11 @@ local function applyPlayerLayout()
 				parts.element.TextSize = math.max(8, math.floor(11 * m.scale + 0.5))
 				parts.element.Position = UDim2.new(1, -m.pad, 0, top)
 				parts.element.Size = UDim2.fromOffset(m.element - m.pad, nameHeight + handleHeight)
+			end
+			if parts.element2 then
+				parts.element2.TextSize = math.max(8, math.floor(11 * m.scale + 0.5))
+				parts.element2.Position = UDim2.new(1, -(m.element + m.pad), 0, top)
+				parts.element2.Size = UDim2.fromOffset(m.element2 - m.pad, nameHeight + handleHeight)
 			end
 		end
 	end
@@ -1904,7 +2013,7 @@ local function rebuildPlayerRows()
 
 	local wide = false
 	for _, target in ipairs(people) do
-		if playerElement(target) ~= nil then
+		if playerElements(target)[1] ~= nil then
 			wide = true
 			break
 		end
@@ -1975,9 +2084,12 @@ local function rebuildPlayerRows()
 		local parts = { row = row, avatar = face, name = nameLabel, handle = handleLabel }
 
 		if wide then
+			local counters = playerElements(target)
+			local primary = counters[1]
+			local secondary = counters[2]
 			local element = label(row, {
 				Name = "Element",
-				Text = tostring(playerElement(target) or ""),
+				Text = primary and primary.value or "",
 				TextSize = 11,
 				TextColor3 = CONFIG.colour.dim,
 				TextXAlignment = Enum.TextXAlignment.Right,
@@ -1986,8 +2098,25 @@ local function rebuildPlayerRows()
 				Size = UDim2.fromOffset(58 - 8, 14),
 				ZIndex = 15,
 			})
-			elementLabels[target.UserId] = element
 			parts.element = element
+			local pair = { primary = element }
+			if secondary then
+				-- the second one says what it is: "Sparkles 7", not another bare 7
+				pair.secondary = label(row, {
+					Name = "Element2",
+					Text = secondary.name .. " " .. secondary.value,
+					TextSize = 11,
+					TextColor3 = CONFIG.colour.dimmer,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					AnchorPoint = Vector2.new(1, 0),
+					Position = UDim2.new(1, -66, 0, 9),
+					Size = UDim2.fromOffset(96 - 8, 14),
+					ZIndex = 15,
+				})
+				parts.element2 = pair.secondary
+			end
+			elementLabels[target.UserId] = pair
 		end
 
 		table.insert(playerRowParts, parts)
@@ -2013,8 +2142,12 @@ local function rebuildPlayerRows()
 	applyPlayerLayout()
 end
 
--- dragging the grip: width is the scale, height is how many rows show. The panel is
--- anchored at its top right corner, so pulling the grip left and down makes it bigger.
+-- Dragging the grip, one direction per drag. Width is the scale and height is how many
+-- rows show, so a pull that moved both at once changed the text size and the row count
+-- together and nobody could aim it. The first few pixels decide: whichever of sideways
+-- or up-down the pointer travels further in owns the drag, and the other number is left
+-- exactly as it was for the rest of the pull. The panel is anchored at its top right
+-- corner, so pulling the grip left and down makes it bigger.
 local dragState = nil
 
 track(playerGrip.InputBegan:Connect(function(input)
@@ -2028,6 +2161,7 @@ track(playerGrip.InputBegan:Connect(function(input)
 		y = input.Position.Y,
 		width = plWidth(),
 		height = playerList.Size.Y.Offset,
+		axis = nil,
 	}
 end))
 
@@ -2039,12 +2173,24 @@ track(UserInputService.InputChanged:Connect(function(input)
 		and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
 	end
-	local width = math.clamp(dragState.width - (input.Position.X - dragState.x), PL_MIN_WIDTH, PL_MAX_WIDTH)
-	playerScale = width / PL_BASE_WIDTH
-	local m = plMetrics()
-	local rows = math.floor((dragState.height + (input.Position.Y - dragState.y) - PL_TITLE_HEIGHT - m.pad * 2 + m.gap)
-		/ (m.row + m.gap) + 0.5)
-	playerRowsWanted = math.clamp(rows, PL_MIN_ROWS, PL_MAX_ROWS)
+	local dx = input.Position.X - dragState.x
+	local dy = input.Position.Y - dragState.y
+	if not dragState.axis then
+		-- not far enough to tell which way this was meant yet
+		if math.abs(dx) < PL_DRAG_LOCK and math.abs(dy) < PL_DRAG_LOCK then
+			return
+		end
+		dragState.axis = math.abs(dx) >= math.abs(dy) and "x" or "y"
+	end
+	if dragState.axis == "x" then
+		local width = math.clamp(dragState.width - dx, PL_MIN_WIDTH, PL_MAX_WIDTH)
+		playerScale = width / PL_BASE_WIDTH
+	else
+		local m = plMetrics()
+		local rows = math.floor((dragState.height + dy - PL_TITLE_HEIGHT - m.pad * 2 + m.gap)
+			/ (m.row + m.gap) + 0.5)
+		playerRowsWanted = math.clamp(rows, PL_MIN_ROWS, PL_MAX_ROWS)
+	end
 	applyPlayerLayout()
 end))
 
@@ -2122,10 +2268,18 @@ end)
 task.spawn(function()
 	while true do
 		if playerList.Visible then
-			for userId, element in pairs(elementLabels) do
+			for userId, pair in pairs(elementLabels) do
 				local target = Players:GetPlayerByUserId(userId)
-				if target and element.Parent then
-					element.Text = tostring(playerElement(target) or "")
+				if target then
+					local counters = playerElements(target)
+					local primary = counters[1]
+					local secondary = counters[2]
+					if pair.primary and pair.primary.Parent then
+						pair.primary.Text = primary and primary.value or ""
+					end
+					if pair.secondary and pair.secondary.Parent then
+						pair.secondary.Text = secondary and (secondary.name .. " " .. secondary.value) or ""
+					end
 				end
 			end
 		end
@@ -2163,8 +2317,8 @@ handlers.alog = function()
 end
 handlers.hop = serverHop
 handlers.exit = leaveGame
-handlers.notify = function()
-	notify("Notify", "Test Notify!")
+handlers.placeholder = function()
+	notify("Placeholder", "Test Notify!")
 end
 
 ----------------------------------------------------------------------
@@ -2409,11 +2563,78 @@ local function applyUpdate()
 	end
 end
 
+-- clog.txt is plain text, one thing per line, in four shapes:
+--   # <title>    the version the notes belong to
+--   [added]      a section: the things that arrived
+--   [removed]    a section: the things that went
+--   [+] <text>   an entry that arrived    [-] an entry that went    [/] nothing in this section
+-- Anything else is skipped, so a line written for a person never shows up in game.
+local function parseClog(body)
+	local rows = {}
+	for line in string.gmatch(body or "", "[^\r\n]+") do
+		local trimmed = string.match(line, "^%s*(.-)%s*$") or ""
+		if #trimmed > 0 then
+			local heading = string.match(trimmed, "^#%s*(.+)$")
+			if heading then
+				table.insert(rows, { kind = "title", text = heading })
+			else
+				local section = string.lower(string.match(trimmed, "^%[(%a+)%]$") or "")
+				if section == "added" or section == "removed" then
+					table.insert(rows, { kind = "section", text = section })
+				else
+					local mark, rest = string.match(trimmed, "^%[([%+%-/])%]%s*(.*)$")
+					if mark and #rest > 0 then
+						local kind = mark == "+" and "added" or (mark == "-" and "removed" or "none")
+						table.insert(rows, { kind = kind, text = rest })
+					end
+				end
+			end
+		end
+	end
+	return rows
+end
+
+local function clogText(row)
+	if row.kind == "title" then
+		return row.text
+	elseif row.kind == "section" then
+		return "[" .. row.text .. "]"
+	elseif row.kind == "added" then
+		return "[+] " .. row.text
+	elseif row.kind == "removed" then
+		return "[-] " .. row.text
+	end
+	return "[/] " .. row.text
+end
+
+local function clogColour(row)
+	if row.kind == "title" then
+		return CONFIG.colour.text
+	elseif row.kind == "section" then
+		return CONFIG.colour.accent
+	elseif row.kind == "added" then
+		return CONFIG.colour.green
+	elseif row.kind == "removed" then
+		return CONFIG.colour.red
+	end
+	return CONFIG.colour.dimmer
+end
+
 local function showUpdatePrompt(latest)
 	if updateShown or updateDenied then
 		return
 	end
 	updateShown = true
+
+	-- the notes are read here, not on the 60 second poll: a prompt nobody gets to see
+	-- is not worth a request
+	local clogRows = {}
+	pcall(function()
+		local body = fetch(CONFIG.clogUrl)
+		if typeof(body) == "string" then
+			clogRows = parseClog(body)
+		end
+	end)
 
 	local overlay = make("Frame", {
 		Name = "UpdatePrompt",
@@ -2426,11 +2647,14 @@ local function showUpdatePrompt(latest)
 	-- swallow clicks on the shade, so nothing behind the panel can be pressed
 	overlay.Active = true
 
+	local PANEL_W = 360
+	local PANEL_H = 330
+
 	local panel = panelled(make("Frame", {
 		Name = "Panel",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(320, 130),
+		Size = UDim2.fromOffset(PANEL_W, PANEL_H),
 		BackgroundColor3 = CONFIG.colour.background,
 		ZIndex = 41,
 	}), 0)
@@ -2441,8 +2665,8 @@ local function showUpdatePrompt(latest)
 	label(panel, {
 		Name = "Title",
 		Text = "Update available: " .. tostring(latest),
-		Position = UDim2.fromOffset(0, 13),
-		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.fromOffset(0, 12),
+		Size = UDim2.new(1, 0, 0, 18),
 		TextSize = CONFIG.textSize,
 		ZIndex = 42,
 	})
@@ -2450,13 +2674,67 @@ local function showUpdatePrompt(latest)
 	label(panel, {
 		Name = "Body",
 		Text = "An update is available, do you want to update now?",
-		Position = UDim2.fromOffset(20, 36),
-		Size = UDim2.new(1, -40, 0, 32),
-		TextSize = CONFIG.buttonTextSize,
+		Position = UDim2.fromOffset(16, 32),
+		Size = UDim2.new(1, -32, 0, 18),
+		TextSize = 11,
 		TextColor3 = CONFIG.colour.dim,
-		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		ZIndex = 42,
 	})
+
+	-- the notes: a fixed window with a scrollbar, so a long changelog scrolls inside
+	-- the panel rather than growing it off the screen
+	local clogHeight = PANEL_H - 58 - 52
+	local clogFrame = make("ScrollingFrame", {
+		Name = "Clog",
+		Position = UDim2.fromOffset(16, 58),
+		Size = UDim2.new(1, -32, 0, clogHeight),
+		BackgroundColor3 = CONFIG.colour.backgroundTop,
+		BackgroundTransparency = 0.3,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = CONFIG.colour.edge,
+		ScrollBarImageTransparency = 0.15,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollingEnabled = true,
+		ElasticBehavior = Enum.ElasticBehavior.Never,
+		ClipsDescendants = true,
+		ZIndex = 42,
+	}, panel)
+	corner(clogFrame, 6)
+	make("UIPadding", {
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+	}, clogFrame)
+	make("UIListLayout", {
+		Padding = UDim.new(0, 2),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, clogFrame)
+
+	if #clogRows == 0 then
+		clogRows = { { kind = "none", text = "no notes for this version" } }
+	end
+	for index, row in ipairs(clogRows) do
+		label(clogFrame, {
+			Name = "Note",
+			Text = clogText(row),
+			TextSize = 11,
+			TextColor3 = clogColour(row),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			-- a long entry wraps onto a second line instead of being cut off: the point
+			-- of the notes is that a person can read what changed before they take it
+			TextWrapped = true,
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Size = UDim2.new(1, 0, 0, 16),
+			LayoutOrder = index,
+			ZIndex = 43,
+		})
+	end
 
 	local function promptButton(name, text, fill, textColour, offsetX)
 		local button = make("TextButton", {
@@ -2469,9 +2747,9 @@ local function showUpdatePrompt(latest)
 			BackgroundColor3 = fill,
 			BorderSizePixel = 0,
 			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, offsetX, 0, 80),
+			Position = UDim2.new(0.5, offsetX, 0, PANEL_H - 44),
 			Size = UDim2.fromOffset(124, 32),
-			ZIndex = 42,
+			ZIndex = 44,
 		}, panel)
 		corner(button, 7)
 		stroke(button, CONFIG.colour.edge, 2, 0.45)
